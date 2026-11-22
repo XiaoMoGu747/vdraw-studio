@@ -42,15 +42,7 @@ jobs:
         run: npm run check:frame
 
       - name: Design token lint
-        run: |
-          npm run design:lint > design-lint.log 2>&1
-          if ($LASTEXITCODE -ne 0) {
-            $msg = (Get-Content design-lint.log -Raw) -replace "`r?`n", " | "
-            if ($msg.Length -gt 60000) { $msg = $msg.Substring(0, 60000) }
-            Write-Output "::error title=design-lint::$msg"
-            exit 1
-          }
-          Get-Content design-lint.log
+        run: npm run design:lint
 
       - name: Contrast lint
         run: npm run contrast:lint

@@ -114,7 +114,11 @@ for (const file of files) {
       problems.push(`${at} 动效时长必须使用 --motion-* 令牌：${motion[1].trim()}`);
     }
 
-    offset += line.length + 1;
+    // 行偏移必须吃掉实际换行符长度：CRLF 检出时每行比 line.length 多一个 \r，
+    // 否则掩码下标会逐行漂移，渐变里的色值被误判为裸色值。
+    offset += line.length;
+    if (text[offset] === '\r') offset += 1;
+    if (text[offset] === '\n') offset += 1;
   });
 }
 
