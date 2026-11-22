@@ -3,6 +3,8 @@
 本地优先的 PC 桌面矢量绘图与二维有机化学结构编辑器。Electron + React + TypeScript + Vite，
 无账号、无云端、无网络依赖，所有文件保存在本机。
 
+<img src="assets/screenshots/start.png" width="880" alt="VDraw Studio 启动页：新建画布、打开画布、内置模板与最近文件">
+
 ## 快速开始
 
 ```bash
@@ -109,6 +111,16 @@ node node_modules/electron/install.js
   实时跟随）；面板内还有实时预览、JPG 质量调节；桌面端弹原生保存框，网页端直接下载
   （PDF 用打印窗口另存）
 
+## 界面
+
+反应式排版：苯环、化学键、箭头与官能团都在同一块画布上，底部为化学工具栏。
+
+<img src="assets/screenshots/chemistry.png" width="880" alt="编辑器界面：画布上的苯环与反应箭头，底部为化学键、元素、官能团、苯环、箭头与化学橡皮工具">
+
+导出面板支持 SVG / PNG / JPG / PDF，可按整页、框选区域或选中对象导出，并设置输出倍率与透明背景。
+
+<img src="assets/screenshots/export.png" width="880" alt="导出面板：格式选择、导出范围、输出尺寸与实时预览">
+
 ## 快捷键
 
 | 操作 | 快捷键 |
@@ -141,7 +153,11 @@ node node_modules/electron/install.js
 
 ## 文档
 
-- `docs/ARCHITECTURE.md`：项目结构、核心模块设计、完整代码清单与验证记录。
-- `docs/VALIDATION.md`：GUI、像素截图、Windows 打包与安装包验收指南。
-- `docs/AGENT_PROMPTS.md`：后续 Agent 的交接基线、提示词模板、验收写法与已知边界。
-- `docs/PAD8_SCOPE.md`：小米平板 8 适配改造交接简报（改造分层、差距证据、手势词典与尺寸令牌、性能预算、里程碑与任务分派）。
+项目结构与核心模块设计、完整代码清单、GUI 像素级验收与 Windows 打包流程，记录在作者的本地开发文档中，不随本仓库发布。
+
+- **架构与实现**：分层结构（`src/core` 纯逻辑、`src/components` 视图、`electron` 主进程）与关键算法说明，仓库内可直接从 `src/core` 的模块划分读起。
+- **验收与打包**：可执行的验收入口即 `npm run smoke`、`npm run gui:check`、`npm run check:tools-ui` 等脚本，运行后在 `artifacts/` 生成截图与报告。
+
+## 许可
+
+MIT License，详见 [LICENSE](LICENSE)。
