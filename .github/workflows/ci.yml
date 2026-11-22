@@ -41,8 +41,17 @@ jobs:
       - name: Selection frame invariants
         run: npm run check:frame
 
-      - name: Build
-        run: npm run build
+      - name: Design token lint
+        run: npm run design:lint
+
+      - name: Contrast lint
+        run: npm run contrast:lint
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Bundle
+        run: npx vite build
 
   # Electron smoke / check:blend need a desktop session and are kept as
   # release-gate commands (`npm run smoke`, `npm run check:blend`) rather
