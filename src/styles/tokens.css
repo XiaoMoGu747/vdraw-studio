@@ -1,0 +1,275 @@
+/**
+ * VDraw 设计令牌（DESIGN_SYSTEM.md 第 2 章）
+ * 第一层：原始值（palette）—— 只在本文件出现裸色值
+ * 第二层：语义层（semantic）—— 业务样式只引用这一层
+ * 第三层：组件层（component）—— 外壳尺寸、行高、层级
+ */
+
+:root {
+  /* ---- 1. 原始色板 ---- */
+  --blue-50: #eef3ff;
+  --blue-100: #dce6ff;
+  --blue-200: #bccfff;
+  --blue-300: #93aeff;
+  --blue-400: #6a8bfa;
+  --blue-500: #3f6df0;
+  --blue-600: #2f58d4;
+  --blue-700: #2445ad;
+  --blue-800: #1e388a;
+  --blue-900: #1a2f6e;
+
+  --chem-50: #e9f7f5;
+  --chem-100: #d2ece8;
+  --chem-300: #7fd3c7;
+  --chem-500: #0f9d8f;
+  --chem-600: #0b7f73;
+  --chem-700: #0a665d;
+
+  --neutral-0: #ffffff;
+  --neutral-25: #fbfbfd;
+  --neutral-50: #f7f8fb;
+  --neutral-100: #f1f4f9;
+  --neutral-150: #eceef3;
+  --neutral-200: #e5e8ee;
+  --neutral-300: #d8dde6;
+  --neutral-400: #b6bdc8;
+  --neutral-500: #8b93a3;
+  --neutral-600: #5a6375;
+  --neutral-700: #465167;
+  --neutral-800: #2b3546;
+  --neutral-900: #1c2330;
+  --neutral-950: #131a26;
+
+  --success-500: #14a37f;
+  --success-50: #e7f7f2;
+  --success-700: #0b7a5e;
+
+  --warning-500: #d97706;
+  --warning-50: #fdf3e3;
+  --warning-700: #8a5c0d;
+
+  --danger-500: #e5484d;
+  --danger-50: #fdeef0;
+  --danger-700: #c62f34;
+
+  --annotation-500: #c98a1c;
+  --annotation-50: #fff6e8;
+  --annotation-700: #8a5c0d;
+
+  /* ---- 2. 语义层：表面与文字 ---- */
+  --bg-app: var(--neutral-150);
+  --bg-chrome: var(--neutral-0);
+  --bg-panel: var(--neutral-25);
+  --bg-panel-2: var(--neutral-50);
+  --bg-subtle: var(--neutral-50);
+  --bg-hover: var(--neutral-100);
+  --bg-active: var(--blue-50);
+  --canvas-bg: #e7e9ef;
+  --canvas-bg-deep: #0b0f16;
+
+  --text: var(--neutral-900);
+  --text-1: var(--neutral-900);
+  --text-2: var(--neutral-600);
+  /* 三级文字：白底 5.3:1 / 浅灰底 4.8:1，满足 WCAG AA（规范 8.1） */
+  --text-3: #636b7e;
+
+  --border: var(--neutral-200);
+  --border-subtle: #eef1f5;
+  --border-2: var(--neutral-300);
+  --border-strong: var(--neutral-300);
+
+  --accent: var(--blue-500);
+  --on-accent: #ffffff;
+  /* 小字/图标用的深一档蓝，白底与 accent-soft 底均 ≥4.5:1 */
+  --accent-text: var(--blue-600);
+  --accent-2: var(--blue-600);
+  --accent-strong: var(--blue-600);
+  --accent-soft: var(--blue-50);
+
+  --chem: var(--chem-500);
+  --chem-soft: var(--chem-50);
+  /* 化学徽标小字（6.8:1） */
+  --chem-text: var(--chem-700);
+
+  --danger: var(--danger-500);
+  --danger-text: var(--danger-700);
+  --danger-soft: var(--danger-50);
+  --warning: var(--warning-500);
+  --warning-text: var(--warning-700);
+  --warning-soft: var(--warning-50);
+  --warning-border: #f5e3bd;
+  --danger-border: #f7cdd0;
+  --chem-border: var(--chem-100);
+  --success: var(--success-500);
+  --success-text: var(--success-700);
+  --success-soft: var(--success-50);
+  --annotation: var(--annotation-500);
+  --annotation-soft: var(--annotation-50);
+
+  /* Toast 深底上的状态色（高对比装饰色） */
+  --toast-info: #9cb9ff;
+  --toast-success: #6fdec0;
+  --toast-warn: #ffd08a;
+
+  /* 常用中性别名（旧样式逐步迁移到上面的档位） */
+  --ink-900: #232d3e;
+  --ink-800: #26303f;
+  --ink-700: var(--neutral-700);
+
+  --surface-1: #fdfdff;
+  --surface-2: #fbfcff;
+
+  /* ---- 3. 字体与字号（8 级 + 1 显示级） ---- */
+  --font-ui: 'Segoe UI', 'Microsoft YaHei', 'PingFang SC', system-ui, sans-serif;
+  --font-chem: 'Cambria', 'Times New Roman', 'Songti SC', serif;
+
+  --fs-2xs: 10px;
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs-base: 13px;
+  --fs-md: 15px;
+  --fs-lg: 18px;
+  --fs-xl: 22px;
+  --fs-2xl: 28px;
+  --fs-display: 40px;
+
+  --lh-tight: 1.35;
+  --lh-normal: 1.55;
+
+  /* ---- 4. 间距（4px 基准 + 2px 微调档） ---- */
+  --space-0_5: 2px;
+  --space-1: 4px;
+  --space-1_5: 6px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* ---- 5. 圆角（6 级） ---- */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
+  --radius-full: 999px;
+  /* 兼容旧变量 */
+  --radius: var(--radius-md);
+
+  /* ---- 6. 阴影 ---- */
+  --shadow-sm: 0 1px 2px rgba(22, 30, 48, 0.06);
+  --shadow-md: 0 10px 28px rgba(22, 30, 48, 0.12);
+  --shadow-lg: 0 28px 70px rgba(15, 23, 42, 0.28);
+
+  /* ---- 7. 层级（9 级阶梯） ---- */
+  --z-base: 0;
+  --z-canvas-ink: 5;
+  --z-canvas-hud: 10;
+  --z-sticky: 20;
+  --z-inline: 30;
+  --z-dropdown: 100;
+  --z-popover: 200;
+  --z-toast: 300;
+  --z-modal: 400;
+  --z-tooltip: 500;
+
+  /* ---- 8. 动效（4 档 + 2 曲线） ---- */
+  --motion-1: 80ms;
+  --motion-2: 140ms;
+  --motion-3: 200ms;
+  --motion-4: 280ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+
+  /* ---- 9. 外壳尺寸 ---- */
+
+  --titlebar-h: 44px;
+  --menubar-h: 32px;
+  --toolbar-h: 56px;
+  --rail-w: 46px;
+  /* 左栏收窄态宽度：与工具栏同宽，且不随“显示工具名”变宽。 */
+  --dock-mini-w: 46px;
+  --dock-w: 244px;
+  --statusbar-h: 28px;
+  --left-w: 264px;
+  --right-w: 300px;
+  /* 画布右下角缩放坞的保留宽度，供底部上下文条避让 */
+  --zoom-dock-w: 156px;
+}
+
+/**
+ * 暗色主题：只重写语义层，画布页面（page.background）仍为纸张色。
+ * 开启方式：设置 → 界面与外观 → 深色，根节点 data-theme="dark"。
+ */
+html[data-theme='dark'] {
+  --neutral-0: #161c26;
+  --neutral-25: #141a23;
+  --neutral-50: #1a212c;
+  --neutral-100: #222b39;
+  --neutral-150: #0f141c;
+  --neutral-200: #2b3546;
+  --neutral-300: #3a4557;
+  --neutral-400: #5a6477;
+  --neutral-500: #8b95a7;
+  --neutral-600: #a7b0c0;
+  --neutral-700: #c2c9d6;
+  --neutral-800: #d9dee8;
+  --neutral-900: #e6eaf2;
+
+  --bg-app: #0f141c;
+  --bg-chrome: #161c26;
+  --bg-panel: #141a23;
+  --bg-panel-2: #1a212c;
+  --bg-subtle: #1a212c;
+  --bg-hover: #222b39;
+  --bg-active: #1d2b4d;
+  --canvas-bg: #0f141c;
+
+  --text: #e6eaf2;
+  --text-1: #e6eaf2;
+  --text-2: #a7b0c0;
+  --text-3: #9aa4b6;
+
+  --border: #2b3546;
+  --border-subtle: #202836;
+  --border-2: #3a4557;
+  --border-strong: #3a4557;
+
+  --accent: #7c9bff;
+  --on-accent: #0b1220;
+  --accent-text: #a9c0ff;
+  --accent-2: #6a8bfa;
+  --accent-strong: #93aeff;
+  --accent-soft: #1b2740;
+
+  --chem: #3ec9b8;
+  --chem-soft: #12312e;
+  --chem-text: #7fd9cd;
+  --chem-border: #1d4a44;
+
+  --danger: #ff7b80;
+  --danger-text: #ffa0a4;
+  --danger-soft: #3a1d22;
+  --danger-border: #5a2a2f;
+  --warning: #f0a94a;
+  --warning-text: #f3bd72;
+  --warning-soft: #33260f;
+  --warning-border: #4a3a1a;
+  --success: #3ecfa4;
+  --success-text: #7fe3c3;
+  --success-soft: #123028;
+  --annotation: #e0a127;
+  --annotation-soft: #33280f;
+
+  --ink-900: #e6eaf2;
+  --ink-800: #d9dee8;
+  --surface-1: #141a23;
+  --surface-2: #161c26;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 10px 28px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 28px 70px rgba(0, 0, 0, 0.6);
+}

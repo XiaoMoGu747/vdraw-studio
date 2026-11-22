@@ -1,0 +1,375 @@
+.chem-panel {
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 20px;
+}
+
+.chem-section {
+  padding: 12px 12px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.chem-section:last-child {
+  border-bottom: none;
+}
+
+.chem-section__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.chem-section__head span {
+  font-size: var(--fs-xs);
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  color: var(--ink-900);
+}
+
+.chem-section__head em {
+  font-style: normal;
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+}
+
+.bond-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+}
+
+.bond-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 2px 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--neutral-0);
+  color: var(--ink-900);
+  transition: border-color var(--motion-2) ease, background var(--motion-2) ease, color var(--motion-2) ease,
+    box-shadow var(--motion-2) ease;
+}
+
+.bond-card:hover {
+  border-color: var(--blue-200);
+  background: var(--bg-panel);
+  color: var(--accent-text);
+}
+
+.bond-card.is-active {
+  border-color: rgba(63, 109, 240, 0.45);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  box-shadow: 0 0 0 2px rgba(63, 109, 240, 0.08);
+}
+
+.bond-card__glyph {
+  height: 24px;
+  display: flex;
+  align-items: center;
+}
+
+.bond-card__label {
+  font-size: var(--fs-2xs);
+  color: inherit;
+  opacity: 0.92;
+  white-space: nowrap;
+}
+
+.atom-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+}
+
+.atom-chip {
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--neutral-0);
+  font-family: 'Cambria', 'Times New Roman', 'Microsoft YaHei', serif;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--ink-900);
+  transition: border-color var(--motion-2) ease, background var(--motion-2) ease, color var(--motion-2) ease;
+}
+
+.atom-chip:hover {
+  border-color: var(--blue-200);
+  color: var(--accent-text);
+}
+
+.atom-chip.is-active {
+  background: var(--accent-soft);
+  border-color: rgba(63, 109, 240, 0.42);
+  color: var(--accent-text);
+}
+
+.atom-chip--group {
+  font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  background: var(--bg-panel);
+}
+
+.benzene-tool {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(180deg, var(--bg-panel), var(--neutral-0));
+}
+
+.benzene-modes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+
+.benzene-mode {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 4px 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--neutral-0);
+  color: var(--ink-900);
+  transition: border-color var(--motion-2) ease, background var(--motion-2) ease, color var(--motion-2) ease;
+}
+
+.benzene-mode:hover {
+  border-color: var(--blue-200);
+  color: var(--accent-text);
+}
+
+.benzene-mode.is-active {
+  border-color: rgba(63, 109, 240, 0.48);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  box-shadow: 0 0 0 2px rgba(63, 109, 240, 0.08);
+}
+
+.benzene-mode__label {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+}
+
+.benzene-mode__label em {
+  font-style: normal;
+  font-size: var(--fs-2xs);
+  font-weight: 400;
+  color: var(--text-3);
+}
+
+.benzene-mode.is-active .benzene-mode__label em {
+  color: var(--text-3);
+}
+
+.benzene-insert {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 29px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--neutral-0);
+  font-size: var(--fs-xs);
+  color: var(--text-2);
+}
+
+.benzene-insert:hover {
+  border-color: var(--blue-200);
+  color: var(--accent-text);
+  background: var(--bg-panel);
+}
+
+.benzene-insert em {
+  font-style: normal;
+  font-size: var(--fs-2xs);
+  color: var(--text-3);
+}
+
+.benzene-tool .chem-hint {
+  margin-top: 0;
+}
+
+/* 说明「默认 vs 当前」的作用域，避免与右侧「当前所选环的式样」混淆。 */
+.benzene-tool__note {
+  margin: 0;
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+  color: var(--text-3);
+}
+
+.ring-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.ring-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--neutral-0);
+  color: var(--ink-900);
+  transition: border-color var(--motion-2) ease, background var(--motion-2) ease, color var(--motion-2) ease;
+}
+
+.ring-card:hover {
+  border-color: var(--blue-200);
+  background: var(--bg-panel);
+  color: var(--accent-text);
+}
+
+.ring-card.is-active {
+  border-color: rgba(63, 109, 240, 0.45);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.ring-card__glyph {
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ring-card__body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.ring-card__name {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: inherit;
+}
+
+.ring-card__meta {
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+}
+
+.arrow-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+
+.arrow-card {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--neutral-0);
+  color: var(--ink-900);
+  transition: border-color var(--motion-2) ease, background var(--motion-2) ease, color var(--motion-2) ease;
+}
+
+.arrow-card svg {
+  flex: none;
+}
+
+.arrow-card span {
+  font-size: var(--fs-2xs);
+  white-space: nowrap;
+}
+
+.arrow-card:hover {
+  border-color: var(--blue-200);
+  color: var(--accent-text);
+}
+
+.arrow-card.is-active {
+  background: var(--accent-soft);
+  border-color: rgba(63, 109, 240, 0.42);
+  color: var(--accent-text);
+}
+
+.chem-hint {
+  margin: 8px 0 0;
+  font-size: var(--fs-xs);
+  line-height: 1.6;
+  color: var(--text-3);
+}
+
+.chem-check-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.chem-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--neutral-0);
+  color: var(--text-2);
+  text-align: left;
+}
+
+.chem-check:hover {
+  border-color: var(--blue-200);
+  background: var(--bg-panel);
+  color: var(--accent-text);
+}
+
+.chem-check__icon {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel-2);
+  color: var(--text-3);
+}
+
+.chem-check__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.chem-check__body strong {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--neutral-700);
+}
+
+.chem-check__body span {
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+  line-height: 1.35;
+}
+
+.ring-card .ring-card__glyph {
+  --ring-label-bg: var(--neutral-0);
+}

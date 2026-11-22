@@ -1,0 +1,100 @@
+{
+  "name": "vdraw-studio",
+  "productName": "VDraw Studio",
+  "version": "0.2.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "description": "本地优先的桌面矢量绘图与有机化学结构编辑器",
+  "author": "VDraw Studio",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src tests",
+    "test": "node scripts/unit-test.mjs",
+    "design:lint": "node scripts/design-lint.mjs",
+    "contrast:lint": "node scripts/contrast-lint.mjs",
+    "build": "node scripts/design-lint.mjs && node scripts/contrast-lint.mjs && npm run lint && tsc --noEmit && vite build",
+    "start": "npm run build && electron .",
+    "smoke": "node scripts/smoke.mjs",
+    "smoke:dev": "node scripts/dev-smoke.mjs",
+    "check:brush": "node scripts/brush-check.mjs",
+    "check:tools": "node scripts/tools-check.mjs",
+    "check:export": "node scripts/export-check.mjs",
+    "check:frame": "node scripts/frame-check.mjs",
+    "check:blend": "electron scripts/blend-check.cjs",
+    "check:sync": "node scripts/asar-sync-check.mjs",
+    "pack": "npm run build && node scripts/package.mjs --dir",
+    "dist:win": "npm run build && node scripts/package.mjs --win nsis --x64",
+    "gui:check": "node scripts/gui-check.mjs",
+    "check:tools-ui": "node scripts/tools-ui-check.mjs",
+    "check:brush-handoff": "node scripts/brush-handoff-check.mjs"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "zustand": "^4.5.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.4",
+    "@types/react": "^18.3.11",
+    "@types/react-dom": "^18.3.0",
+    "@typescript-eslint/parser": "^8.46.0",
+    "@vitejs/plugin-react": "^4.3.2",
+    "axe-core": "^4.10.2",
+    "electron": "^32.2.0",
+    "electron-builder": "^26.15.3",
+    "eslint": "^9.14.0",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "typescript": "^5.6.2",
+    "vite": "^5.4.8"
+  },
+  "build": {
+    "appId": "com.vdrawstudio.app",
+    "productName": "VDraw Studio",
+    "artifactName": "${productName}-${version}-${arch}.${ext}",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json",
+      "README.md"
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico"
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.graphics-design"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Graphics"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "VDraw Studio"
+    }
+  }
+}

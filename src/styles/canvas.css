@@ -1,0 +1,517 @@
+.canvas-area {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  background: radial-gradient(1200px 760px at 50% 30%, #eff1f6 0%, var(--canvas-bg) 72%, #e3e6ed 100%);
+}
+
+.canvas-area--no-rulers .canvas-viewport {
+  inset: 0 !important;
+}
+
+html[data-theme='dark'] .canvas-area {
+  background: var(--canvas-bg);
+}
+
+html[data-theme='dark'] .canvas-viewport {
+  background: var(--canvas-bg-deep);
+}
+
+.canvas-viewport {
+  position: absolute;
+  overflow: hidden;
+  background: radial-gradient(900px 620px at 50% 42%, #f0f2f7 0%, #e9ebf1 70%, var(--border) 100%);
+  touch-action: none;
+}
+
+.canvas-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.ruler {
+  position: absolute;
+  background: var(--bg-panel-2);
+  z-index: var(--z-sticky);
+  user-select: none;
+}
+
+.ruler--top {
+  top: 0;
+  left: 22px;
+  right: 0;
+  height: 22px;
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.ruler--left {
+  top: 22px;
+  left: 0;
+  bottom: 0;
+  width: 22px;
+  border-right: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.ruler svg {
+  display: block;
+}
+
+.ruler__label {
+  font-size: var(--fs-2xs);
+  fill: var(--text-3);
+  font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+}
+
+.ruler-corner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  background: var(--bg-panel-2);
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--fs-2xs);
+  color: var(--text-3);
+  z-index: var(--z-sticky);
+  user-select: none;
+}
+
+.canvas-badge {
+  position: absolute;
+  top: 14px;
+  left: 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: var(--radius-xl);
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  box-shadow: 0 1px 3px rgba(22, 30, 48, 0.06);
+  backdrop-filter: blur(6px);
+  font-size: var(--fs-xs);
+  font-weight: 550;
+  color: var(--text-2);
+  pointer-events: none;
+  z-index: var(--z-canvas-hud);
+}
+
+.canvas-badge__dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--annotation);
+  box-shadow: 0 0 0 2.5px rgba(224, 161, 39, 0.14);
+}
+
+/* 生效中的模式 chip：对称 / 辅助线 / 吸附关闭。避免"面板收起了但模式还在"。 */
+.canvas-modes {
+  position: absolute;
+  top: 14px;
+  left: 16px;
+  transform: translateY(30px);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-width: 60%;
+  z-index: var(--z-canvas-hud);
+}
+
+.canvas-mode-chip {
+  height: 22px;
+  padding: 0 8px;
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--border);
+  background: var(--bg-panel);
+  color: var(--text-2);
+  font-size: var(--fs-2xs);
+  font-weight: 550;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(22, 30, 48, 0.06);
+}
+
+.canvas-mode-chip:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.canvas-mode-chip.is-off {
+  color: var(--text-3);
+}
+
+/* 空白画布引导：只在没有任何对象时出现，不拦截画布指针事件。 */
+.canvas-empty-guide {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: var(--z-canvas-hud);
+  width: 300px;
+  padding: 16px 16px;
+  border: 1px dashed var(--border-2);
+  border-radius: var(--radius-lg);
+  background: var(--bg-panel);
+  box-shadow: var(--shadow-sm);
+  backdrop-filter: blur(4px);
+  pointer-events: none;
+  color: var(--text-3);
+}
+
+.canvas-empty-guide strong {
+  display: block;
+  margin-bottom: 6px;
+  font-size: var(--fs-sm);
+  color: var(--text-2);
+}
+
+.canvas-empty-guide ul {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+}
+
+.canvas-empty-guide li {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.canvas-empty-guide kbd {
+  font-size: var(--fs-2xs);
+  padding: 2px 4px;
+}
+
+.canvas-empty-guide > span {
+  display: block;
+  margin-top: 8px;
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+}
+
+.zoom-dock {
+  position: absolute;
+  right: 16px;
+  bottom: 14px;
+  min-width: var(--zoom-dock-w);
+  justify-content: center;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 32px;
+  padding: 0 6px;
+  border-radius: var(--radius-md);
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 16px rgba(22, 30, 48, 0.09);
+  backdrop-filter: blur(8px);
+  z-index: var(--z-canvas-hud);
+}
+
+.zoom-dock__value {
+  min-width: 46px;
+  height: 24px;
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.zoom-dock__value:hover {
+  background: var(--bg-hover);
+}
+
+.zoom-dock__sep {
+  width: 1px;
+  height: 15px;
+  background: var(--border);
+  margin: 0 4px;
+}
+
+.object-menu {
+  position: absolute;
+  z-index: var(--z-dropdown);
+  width: 206px;
+  padding: 6px;
+  background: var(--neutral-0);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 16px 38px rgba(22, 30, 48, 0.2), 0 2px 6px rgba(22, 30, 48, 0.06);
+  user-select: none;
+  -webkit-user-select: none;
+  animation: menu-in var(--motion-1) ease-out;
+}
+
+.object-menu__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px 8px;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  border-bottom: 1px solid var(--border-subtle);
+  margin-bottom: 4px;
+}
+
+.object-menu__head span {
+  color: var(--ink-900);
+  font-weight: 600;
+  font-size: var(--fs-sm);
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.object-menu__head em {
+  margin-left: auto;
+  font-style: normal;
+  font-size: var(--fs-2xs);
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.object-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-sm);
+  color: var(--text);
+  text-align: left;
+}
+
+.object-menu button:hover {
+  background: var(--accent-soft);
+  color: var(--accent-2);
+}
+
+.object-menu button.object-menu__primary {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+.object-menu button.object-menu__danger {
+  color: var(--danger);
+}
+
+.object-menu button.object-menu__danger:hover {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.object-menu__sep {
+  height: 1px;
+  background: var(--border-subtle);
+  margin: 4px 6px;
+}
+
+/* 文本编辑浮层必须压在底部上下文横栏（--z-inline）之上：
+   否则在画布下半部分输入时，横栏会盖住文本框并吞掉点击。 */
+.canvas-text-editor {
+  position: absolute;
+  z-index: var(--z-dropdown);
+  resize: none;
+  padding: 2px 4px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-xs);
+  background: rgba(255, 255, 255, 0.97);
+  color: var(--neutral-900);
+  font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+  line-height: 1.32;
+  box-shadow: 0 4px 16px rgba(22, 30, 48, 0.16);
+  outline: none;
+  overflow: hidden;
+}
+
+.scene-layer text {
+  user-select: none;
+}
+
+.cursor-default {
+  cursor: default;
+}
+
+.cursor-crosshair {
+  cursor: crosshair;
+}
+
+.cursor-grab {
+  cursor: grab;
+}
+
+.cursor-grabbing {
+  cursor: grabbing;
+}
+
+/* ---- 导出框选叠层 ---- */
+.export-region {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-canvas-hud);
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.export-region__frame {
+  position: absolute;
+  border: 1px solid var(--accent);
+  background: rgba(63, 109, 240, 0.05);
+  box-shadow: 0 0 0 9999px rgba(12, 20, 38, 0.34);
+  cursor: move;
+}
+
+.export-region__grid {
+  position: absolute;
+  background: rgba(63, 109, 240, 0.26);
+  pointer-events: none;
+}
+
+.export-region__grid--v1,
+.export-region__grid--v2 {
+  top: 0;
+  bottom: 0;
+  width: 1px;
+}
+
+.export-region__grid--h1,
+.export-region__grid--h2 {
+  left: 0;
+  right: 0;
+  height: 1px;
+}
+
+.export-region__grid--v1 {
+  left: 33.33%;
+}
+
+.export-region__grid--v2 {
+  left: 66.66%;
+}
+
+.export-region__grid--h1 {
+  top: 33.33%;
+}
+
+.export-region__grid--h2 {
+  top: 66.66%;
+}
+
+.export-region__handle {
+  position: absolute;
+  width: 11px;
+  height: 11px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-xs);
+  background: var(--neutral-0);
+  box-shadow: var(--shadow-sm);
+  transform: translate(-50%, -50%);
+}
+
+.export-region__size {
+  position: absolute;
+  left: 0;
+  bottom: 100%;
+  margin-bottom: 6px;
+  padding: 2px 6px;
+  border-radius: var(--radius-xs);
+  background: var(--ink-900);
+  color: var(--neutral-0);
+  font-size: var(--fs-2xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* 绘画辅助状态角标：避免用户忘记笔迹正被约束到辅助线方向 */
+.guide-assist-badge {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: var(--radius-full);
+  background: rgba(63, 109, 240, 0.12);
+  border: 1px solid rgba(63, 109, 240, 0.35);
+  color: var(--accent-text);
+  font-size: var(--fs-2xs);
+  z-index: var(--z-canvas-hud);
+  pointer-events: none;
+}
+
+/* 实时笔迹层：覆盖在 SVG 之上、HUD 之下，只负责绘制中的笔迹 */
+.brush-ink {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: var(--z-canvas-ink);
+}
+
+/* 画笔/橡皮尺寸 HUD：调整后短暂显示，避免只能靠光标环估算 */
+.brush-hud {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  border-radius: var(--radius-full);
+  background: rgba(28, 35, 48, 0.9);
+  color: var(--neutral-0);
+  font-size: var(--fs-2xs);
+  line-height: 1.2;
+  z-index: var(--z-canvas-hud);
+  pointer-events: none;
+}
+
+.brush-hud__dot {
+  flex: none;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35);
+}
+
+.export-region__hint {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  height: 26px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--radius-full);
+  background: rgba(28, 35, 48, 0.9);
+  color: var(--neutral-0);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.cursor-zoom {
+  cursor: zoom-in;
+}
+
+.cursor-text {
+  cursor: text;
+}

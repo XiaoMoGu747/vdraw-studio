@@ -1,0 +1,31 @@
+node_modules/
+dist/
+dist-electron/
+# electron-builder 产物；release*/ 兼容自定义 directories.output
+release*/
+artifacts/
+*.log
+.DS_Store
+Thumbs.db
+
+# 本地 Agent 状态与工作区数据，不入库
+.workbuddy/
+.codebuddy/
+
+# 浏览器快照残留（Playwright 抓取的腾讯云页面），非项目文件
+/tcb-*.yaml
+/tencent-*.yaml
+
+# 内部开发记录与临时存盘，仅保留在本机
+/docs/
+/VDraw保存/
+
+# 编辑器与工具缓存
+.vscode/
+.idea/
+*.tsbuildinfo
+.eslintcache
+
+# 环境变量与本地配置
+.env
+.env.*
