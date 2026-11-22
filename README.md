@@ -3,9 +3,11 @@
 <p>
   <a href="https://github.com/XiaoMoGu747/vdraw-studio/actions/workflows/ci.yml"><img src="https://github.com/XiaoMoGu747/vdraw-studio/actions/workflows/ci.yml/badge.svg" alt="CI 状态"></a>
   <a href="https://github.com/XiaoMoGu747/vdraw-studio/releases"><img src="https://img.shields.io/github/v/release/XiaoMoGu747/vdraw-studio?label=release&amp;color=4c7df0" alt="最新版本"></a>
+  <img src="https://img.shields.io/github/downloads/XiaoMoGu747/vdraw-studio/total?color=4c7df0" alt="下载量">
   <img src="https://img.shields.io/github/license/XiaoMoGu747/vdraw-studio?color=4c7df0" alt="许可证">
   <img src="https://img.shields.io/badge/platform-Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-4c7df0" alt="支持平台">
   <img src="https://img.shields.io/badge/Electron-32-47848F" alt="Electron 32">
+  <img src="https://img.shields.io/github/last-commit/XiaoMoGu747/vdraw-studio?color=4c7df0" alt="最近提交">
 </p>
 
 本地优先的 PC 桌面矢量绘图与二维有机化学结构编辑器。Electron + React + TypeScript + Vite，
@@ -13,13 +15,18 @@
 
 ## 下载
 
-Windows 安装包（x64 · NSIS · 约 76 MB）发布在 [Releases](https://github.com/XiaoMoGu747/vdraw-studio/releases) 页面：
+Windows 安装包（x64 · NSIS · 约 76 MB）发布在 [Releases](https://github.com/XiaoMoGu747/vdraw-studio/releases) 页面，直接下载最新版：
+
+**[→ 下载 VDraw Studio](https://github.com/XiaoMoGu747/vdraw-studio/releases/latest)**
 
 | 产物 | 说明 |
 | --- | --- |
-| `VDraw Studio-<版本>-x64.exe` | Windows x64 安装程序，可选安装目录，自动创建桌面与开始菜单快捷方式 |
+| `VDraw.Studio-<版本>-x64.exe` | Windows x64 安装程序，可选安装目录，自动创建桌面与开始菜单快捷方式（GitHub 会把文件名里的空格转成点） |
 
 安装后从开始菜单或桌面快捷方式启动；卸载走「设置 → 应用 → VDraw Studio」。
+
+> 安装包未做代码签名，Windows SmartScreen 首次运行会提示「未知发布者」，点「更多信息 → 仍要运行」即可。
+
 macOS / Linux 的构建目标已在 `package.json` 中配置，但暂无预编译产物，需按下文自行构建。
 
 <img src="assets/screenshots/start.png" width="880" alt="VDraw Studio 启动页：新建画布、打开画布、内置模板与最近文件">
