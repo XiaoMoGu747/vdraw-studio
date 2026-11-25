@@ -96,6 +96,13 @@ export function ImportDialog() {
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const dragDepth = useRef(0);
   const readToken = useRef(0);
+  const entrySeq = useRef(0);
+  const entriesRef = useRef<ImportEntry[]>([]);
+
+  const commitEntries = (next: ImportEntry[]) => {
+    entriesRef.current = next;
+    setEntries(next);
+  };
 
   const busy = phase === 'reading' || phase === 'applying';
   const hasCanvas = route === 'editor';
@@ -116,6 +123,8 @@ export function ImportDialog() {
   useEffect(() => {
     if (!open) return;
     readToken.current += 1;
+    entrySeq.current = 0;
+    entriesRef.current = [];
     setPhase('idle');
     setEntries([]);
     setActiveId(null);
@@ -245,31 +254,35 @@ export function ImportDialog() {
   const autoSelectMode = (list: ImportedSource[]) => {
     const options = buildModes(list);
     setMode((current) => {
-      const preferred =
-        list.length > 1
-          ? options.find((option) => option.id === 'layer' && !option.disabled)?.id
-          : options.find((option) => option.id === current && !option.disabled)?.id;
-      return preferred ?? options.find((option) => !option.disabled)?.id ?? 'new';
+      // 继续添加时尽量保留用户已经选的落点，只有当前落点不再可用才自动切换。
+      const currentOption = options.find((option) => option.id === current);
+      if (currentOption && !currentOption.disabled) return current;
+      const preferred = list.length > 1 ? 'layer' : current;
+      const preferredOption = options.find((option) => option.id === preferred);
+      if (preferredOption && !preferredOption.disabled) return preferredOption.id;
+      return options.find((option) => !option.disabled)?.id ?? 'new';
     });
   };
 
-  const ingestPicked = async (picked: PickedImportFile[]) => {
+  const ingestPicked = async (picked: PickedImportFile[], append = false) => {
     if (picked.length === 0) {
-      setPhase(entries.length > 0 ? 'ready' : 'idle');
+      setPhase(entriesRef.current.length > 0 ? 'ready' : 'idle');
       return;
     }
     const token = ++readToken.current;
-    setEntries([]);
-    setActiveId(null);
+    const baseEntries = append ? entriesRef.current : [];
+    setActiveId(append ? activeId : null);
     setError(null);
     setProgress({ done: 0, total: picked.length });
     setPhase('reading');
+    commitEntries(baseEntries);
 
-    const next: ImportEntry[] = [];
+    const next = [...baseEntries];
     for (let index = 0; index < picked.length; index += 1) {
       if (token !== readToken.current) return;
       const item = picked[index];
-      const id = `${index}-${item.name}`;
+      entrySeq.current += 1;
+      const id = `import-${entrySeq.current}`;
       let entry: ImportEntry;
       try {
         if (item.error) {
@@ -292,7 +305,7 @@ export function ImportDialog() {
       }
       next.push(entry);
       if (token !== readToken.current) return;
-      setEntries([...next]);
+      commitEntries([...next]);
       setActiveId((current) => current ?? (entry.source ? entry.id : current));
       setProgress({ done: index + 1, total: picked.length });
       // 让浏览器绘制进度后再继续解析下一个文件。
@@ -302,25 +315,26 @@ export function ImportDialog() {
 
     setPhase('ready');
     setProgress(null);
+    const firstNewOk = next.slice(baseEntries.length).find((entry) => entry.source);
     const firstOk = next.find((entry) => entry.source);
-    setActiveId(firstOk?.id ?? next[0]?.id ?? null);
+    setActiveId(firstNewOk?.id ?? activeId ?? firstOk?.id ?? next[0]?.id ?? null);
     autoSelectMode(next.flatMap((entry) => (entry.source ? [entry.source] : [])));
   };
 
-  const choose = async () => {
+  const choose = async (append = false) => {
     if (busy) return;
     setError(null);
     setPhase('reading');
     try {
       const picked = await actions.pickImportFiles();
       if (picked.length === 0) {
-        setPhase(entries.length > 0 ? 'ready' : 'idle');
+        setPhase(entriesRef.current.length > 0 ? 'ready' : 'idle');
         return;
       }
-      await ingestPicked(picked);
+      await ingestPicked(picked, append);
     } catch (caught) {
       setError(importErrorInfo(caught));
-      setPhase(entries.length > 0 ? 'ready' : 'idle');
+      setPhase(entriesRef.current.length > 0 ? 'ready' : 'idle');
     }
   };
 
@@ -330,11 +344,36 @@ export function ImportDialog() {
     setPhase('reading');
     try {
       const picked = await actions.readDroppedFiles(files);
-      await ingestPicked(picked);
+      await ingestPicked(picked, entriesRef.current.length > 0);
     } catch (caught) {
       setError(importErrorInfo(caught));
-      setPhase(entries.length > 0 ? 'ready' : 'idle');
+      setPhase(entriesRef.current.length > 0 ? 'ready' : 'idle');
     }
+  };
+
+  const removeEntry = (id: string) => {
+    if (busy) return;
+    const next = entriesRef.current.filter((entry) => entry.id !== id);
+    commitEntries(next);
+    if (activeId === id) {
+      const fallback = next.find((entry) => entry.source) ?? next[0];
+      setActiveId(fallback?.id ?? null);
+    }
+    if (next.length === 0) {
+      setPhase('idle');
+      setError(null);
+    }
+    autoSelectMode(next.flatMap((entry) => (entry.source ? [entry.source] : [])));
+  };
+
+  const clearEntries = () => {
+    if (busy || entriesRef.current.length === 0) return;
+    readToken.current += 1;
+    commitEntries([]);
+    setActiveId(null);
+    setPhase('idle');
+    setError(null);
+    setProgress(null);
   };
 
   const handleDragEnter = (event: DragEvent<HTMLDivElement>) => {
@@ -412,31 +451,33 @@ export function ImportDialog() {
       }
     >
       <div className="import-dialog" data-testid="import-dialog">
-        <section className="import-formats" aria-label="支持的导入格式">
-          <div className="import-formats__head">
-            <h3>支持的文件</h3>
-            <span>来源：本机文件，不上传</span>
-          </div>
-          <p className="import-formats__line">
-            <code>.vdraw / .json</code> 工程 · <code>.svg</code> 矢量图 ·
-            <code>PNG / JPEG / WebP / GIF / BMP</code> 位图
-          </p>
-          <details className="import-formats__more">
-            <summary>格式细节与限制</summary>
-            <ul>
-              {IMPORT_FORMAT_GUIDE.map((item) => (
-                <li key={item.id} data-supported={item.supported ? 'true' : 'false'}>
-                  <code>{item.extension}</code>
-                  <strong>{item.label}</strong>
-                  <span>
-                    {item.detail}
-                    {item.supported ? null : <em>（不支持导入）</em>}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </details>
-        </section>
+        {entries.length === 0 ? (
+          <section className="import-formats" aria-label="支持的导入格式">
+            <div className="import-formats__head">
+              <h3>支持的文件</h3>
+              <span>来源：本机文件，不上传</span>
+            </div>
+            <p className="import-formats__line">
+              <code>.vdraw / .json</code> 工程 · <code>.svg</code> 矢量图 ·
+              <code>PNG / JPEG / WebP / GIF / BMP</code> 位图
+            </p>
+            <details className="import-formats__more">
+              <summary>格式细节与限制</summary>
+              <ul>
+                {IMPORT_FORMAT_GUIDE.map((item) => (
+                  <li key={item.id} data-supported={item.supported ? 'true' : 'false'}>
+                    <code>{item.extension}</code>
+                    <strong>{item.label}</strong>
+                    <span>
+                      {item.detail}
+                      {item.supported ? null : <em>（不支持导入）</em>}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          </section>
+        ) : null}
 
         <div
           className={`import-drop${dragging ? ' is-dragging' : ''}`}
@@ -466,10 +507,10 @@ export function ImportDialog() {
             className="btn btn--outline btn--sm import-drop__action"
             data-testid="import-choose"
             disabled={busy}
-            onClick={() => void choose()}
+            onClick={() => void choose(entries.length > 0)}
           >
-            <Icon name="folder" size={14} />
-            {entries.length > 0 ? '重新选择' : '选择文件'}
+            <Icon name={entries.length > 0 ? 'plus' : 'folder'} size={14} />
+            {entries.length > 0 ? '添加文件' : '选择文件'}
           </button>
         </div>
 
@@ -498,11 +539,34 @@ export function ImportDialog() {
         {showBatch ? (
           <section className="import-batch" data-testid="import-batch" aria-label="已选择的文件">
             <div className="import-batch__head">
-              <strong>已选择 {entries.length} 个文件</strong>
-              <span>
-                {sources.length} 个可导入
-                {failCount > 0 ? ` · ${failCount} 个失败` : ''}
-              </span>
+              <div className="import-batch__title">
+                <strong>已选择 {entries.length} 个文件</strong>
+                <span>
+                  {sources.length} 个可导入
+                  {failCount > 0 ? ` · ${failCount} 个失败` : ''}
+                </span>
+              </div>
+              <div className="import-batch__actions">
+                <button
+                  type="button"
+                  className="btn btn--outline btn--sm"
+                  data-testid="import-add-more"
+                  disabled={busy}
+                  onClick={() => void choose(true)}
+                >
+                  <Icon name="plus" size={13} />
+                  继续添加
+                </button>
+                <button
+                  type="button"
+                  className="ghost-action"
+                  data-testid="import-clear"
+                  disabled={busy}
+                  onClick={clearEntries}
+                >
+                  清空
+                </button>
+              </div>
             </div>
             <ul className="import-batch__list">
               {entries.map((entry) => {
@@ -518,7 +582,11 @@ export function ImportDialog() {
                       type="button"
                       className="import-batch__button"
                       aria-pressed={active}
-                      title={entry.name}
+                      title={
+                        entry.source && entry.source.warnings.length > 0
+                          ? `${entry.name}\n${entry.source.warnings.join('\n')}`
+                          : entry.name
+                      }
                       onClick={() => setActiveId(entry.id)}
                     >
                       <span
@@ -531,6 +599,17 @@ export function ImportDialog() {
                         {entry.source ? sourceMeta(entry.source) : '无法导入'}
                       </span>
                       <Icon name={entry.source ? 'check' : 'warning'} size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      className="import-batch__remove"
+                      data-testid="import-remove"
+                      aria-label={`移除 ${entry.name}`}
+                      title={`移除 ${entry.name}`}
+                      disabled={busy}
+                      onClick={() => removeEntry(entry.id)}
+                    >
+                      <Icon name="close" size={13} />
                     </button>
                     {entry.error ? (
                       <div
@@ -549,12 +628,33 @@ export function ImportDialog() {
           </section>
         ) : null}
 
+        {entries.length > 1 && source && source.warnings.length > 0 ? (
+          <ul className="import-warnings">
+            {source.warnings.map((warning) => (
+              <li key={warning}>· {warning}</li>
+            ))}
+          </ul>
+        ) : null}
+
         {source && entries.length === 1 ? (
           <>
             <section className="import-summary" data-testid="import-summary">
               <header className="import-summary__head">
                 <span className="import-badge">{sourceBadge(source)}</span>
                 <strong title={source.fileName}>{source.fileName}</strong>
+                <button
+                  type="button"
+                  className="import-summary__remove"
+                  data-testid="import-remove-single"
+                  aria-label={`移除 ${source.fileName}`}
+                  title={`移除 ${source.fileName}`}
+                  disabled={busy}
+                  onClick={() => {
+                    if (activeEntry) removeEntry(activeEntry.id);
+                  }}
+                >
+                  <Icon name="close" size={13} />
+                </button>
               </header>
               <dl>
                 <div>

@@ -396,7 +396,7 @@ function objectToSvg(
         return group.ringCenters
           .map(
             (center) =>
-              `<circle cx="${center.x}" cy="${center.y}" r="22" fill="none" stroke="${stroke}" stroke-width="${group.style.stroke.width || 2.2}" opacity="${group.style.opacity}"/>`
+              `<circle cx="${center.x}" cy="${center.y}" r="${22 * (group.ringScale ?? 1)}" fill="none" stroke="${stroke}" stroke-width="${group.style.stroke.width || 2.2}" opacity="${group.style.opacity}"/>`
           )
           .join('');
       }

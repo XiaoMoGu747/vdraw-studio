@@ -29,6 +29,7 @@ import {
 import { grainBudgetIds } from '../src/core/grainBudget';
 import { regionWidthForOutputWidth, safeRasterScale } from '../src/core/io/raster';
 import { exportMol, exportSmiles } from '../src/core/io/chemExport';
+import { chemBondShape } from '../src/core/chemistry/render';
 import {
   ImportError,
   detectImportFormat,
@@ -1585,4 +1586,86 @@ test('批量导入：超大位图保持原始尺寸，不被自动缩小或裁�
   assert.equal(image.height, 1200);
   assert.equal(image.x, (current.page.width - 2000) / 2);
   assert.ok(result.warnings.some((warning) => warning.includes('不会自动裁剪')));
+});
+
+test('缩放：双键/三键间距与苯环内圈随缩放比例同步', () => {
+  const doc = createDocument('blank-landscape', '缩放');
+  const layer = doc.layers[0];
+
+  const doubleBond = createBondObject(
+    layer.id,
+    DEFAULT_STYLE,
+    { x: 100, y: 100 },
+    { x: 140, y: 100 },
+    'double'
+  );
+  const scaledDouble = scaleObject(doubleBond, { x: 120, y: 100 }, 2, 2) as typeof doubleBond;
+  assert.equal(scaledDouble.scale, 2);
+  const doubleDoc = { ...doc, layers: [{ ...layer, objects: [scaledDouble] }] };
+  const doubleShape = chemBondShape(doubleDoc, scaledDouble);
+  const doubleOffsets = doubleShape.geometry.segments
+    .slice(1)
+    .map((segment) => Math.abs(segment.y1 - 100));
+  assert.ok(doubleOffsets.length > 0);
+  assert.ok(doubleOffsets.every((offset) => Math.abs(offset - 8.4) < 0.01));
+
+  const tripleBond = createBondObject(
+    layer.id,
+    DEFAULT_STYLE,
+    { x: 200, y: 100 },
+    { x: 240, y: 100 },
+    'triple'
+  );
+  const scaledTriple = scaleObject(tripleBond, { x: 220, y: 100 }, 1.5, 1.5) as typeof tripleBond;
+  const tripleDoc = { ...doc, layers: [{ ...layer, objects: [scaledTriple] }] };
+  const tripleShape = chemBondShape(tripleDoc, scaledTriple);
+  const tripleOffsets = tripleShape.geometry.segments
+    .slice(1)
+    .map((segment) => Math.abs(segment.y1 - 100));
+  assert.equal(tripleOffsets.length, 2);
+  assert.ok(tripleOffsets.every((offset) => Math.abs(offset - 6.3) < 0.01));
+
+  // 苯环编组：内圈半径与子键间距都跟随整体缩放。
+  const ringGroup = {
+    ...createGroupObject(layer.id, '苯环', { x: 300, y: 80, width: 80, height: 80 }, []),
+    ringStyle: 'pauling' as const,
+    ringScale: 1
+  };
+  const scaledGroup = scaleObject(ringGroup, { x: 340, y: 120 }, 2, 2) as GroupObject;
+  assert.equal(scaledGroup.ringScale, 2);
+
+  const childBond = createBondObject(
+    layer.id,
+    DEFAULT_STYLE,
+    { x: 300, y: 120 },
+    { x: 340, y: 120 },
+    'double'
+  );
+  const parent = {
+    ...createGroupObject(layer.id, '苯环', { x: 300, y: 100, width: 40, height: 40 }, [
+      childBond.id
+    ]),
+    ringStyle: 'pauling' as const
+  };
+  const child = { ...childBond, parentId: parent.id };
+  const groupedDoc = {
+    ...doc,
+    layers: [{ ...layer, objects: [parent, child] }]
+  };
+  const scaledGrouped = scaleDocumentObjects(
+    groupedDoc,
+    [parent.id],
+    { x: 320, y: 120 },
+    2,
+    2
+  );
+  const scaledChild = scaledGrouped.layers[0].objects.find(
+    (object) => object.id === childBond.id
+  ) as typeof childBond;
+  assert.equal(scaledChild.scale, 2);
+  const childShape = chemBondShape(scaledGrouped, scaledChild);
+  const childOffsets = childShape.geometry.segments
+    .slice(1)
+    .map((segment) => Math.abs(segment.y1 - 120));
+  assert.ok(childOffsets.every((offset) => Math.abs(offset - 8.4) < 0.01));
 });

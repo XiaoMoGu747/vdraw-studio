@@ -475,6 +475,21 @@ function renderIcon(name: IconName): ReactNode {
           <path d="M7.4 18.6l4.6-7.4 4.6 7.4" />
         </>
       );
+    case 'link':
+      return (
+        <>
+          <path d="M10 13a5 5 0 0 0 7.07 0l2.83-2.83a5 5 0 0 0-7.07-7.07l-1.41 1.41" />
+          <path d="M14 11a5 5 0 0 0-7.07 0L4.1 13.83a5 5 0 0 0 7.07 7.07l1.41-1.41" />
+        </>
+      );
+    case 'unlink':
+      return (
+        <>
+          <path d="M18.84 12.25l1.72-1.71a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+          <path d="M5.17 11.75l-1.71 1.71a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+          <path d="M8 2v3M2 8h3M16 22v-3M22 16h-3" />
+        </>
+      );
     case 'eraser':
       return (
         <>

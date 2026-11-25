@@ -63,6 +63,8 @@ export type IconName =
   | 'history'
   | 'copy'
   | 'merge'
+  | 'link'
+  | 'unlink'
   | 'eraser'
   | 'brush'
   | 'bucket'

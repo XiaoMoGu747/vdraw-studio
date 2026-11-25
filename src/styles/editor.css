@@ -1081,9 +1081,16 @@
 
 .import-batch__head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 8px;
+}
+
+.import-batch__title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
 }
 
 .import-batch__head strong {
@@ -1095,6 +1102,13 @@
 .import-batch__head span {
   font-size: var(--fs-2xs);
   color: var(--text-3);
+}
+
+.import-batch__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
 }
 
 .import-batch__list {
@@ -1109,6 +1123,8 @@
 }
 
 .import-batch__item {
+  display: flex;
+  flex-wrap: wrap;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--bg-chrome);
@@ -1121,13 +1137,31 @@
 }
 
 .import-batch__button {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
   text-align: left;
+}
+
+.import-batch__remove {
+  flex: none;
+  align-self: center;
+  width: 24px;
+  height: 24px;
+  margin-right: 6px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-sm);
+  color: var(--text-3);
+}
+
+.import-batch__remove:hover:not(:disabled) {
+  background: var(--danger-soft);
+  color: var(--danger-text);
 }
 
 .import-batch__name {
@@ -1146,6 +1180,7 @@
 }
 
 .import-batch__error {
+  flex-basis: 100%;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -1181,6 +1216,22 @@
   color: var(--text);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.import-summary__remove {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  margin-left: auto;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-sm);
+  color: var(--text-3);
+}
+
+.import-summary__remove:hover:not(:disabled) {
+  background: var(--danger-soft);
+  color: var(--danger-text);
 }
 
 .import-badge {

@@ -170,6 +170,7 @@ export function ObjectPropertiesPanel() {
   );
 
   const [menuOpen, setMenuOpen] = useState(false);
+  const [scaleUniform, setScaleUniform] = useState(true);
 
   useEffect(() => {
     setMenuOpen(false);
@@ -264,6 +265,93 @@ export function ObjectPropertiesPanel() {
       true
     );
   };
+
+  /** 缩放基准：位图用原始像素，其余对象用首次进入缩放面板时的显示尺寸。 */
+  const scaleBaseOf = (object: SceneObject, frameWidth: number, frameHeight: number) => {
+    if (object.type === 'image') {
+      return {
+        width: Math.max(1, object.naturalWidth || frameWidth),
+        height: Math.max(1, object.naturalHeight || frameHeight)
+      };
+    }
+    return {
+      width:
+        typeof object.baseWidth === 'number' && Number.isFinite(object.baseWidth) && object.baseWidth > 0
+          ? object.baseWidth
+          : Math.max(1, frameWidth),
+      height:
+        typeof object.baseHeight === 'number' &&
+        Number.isFinite(object.baseHeight) &&
+        object.baseHeight > 0
+          ? object.baseHeight
+          : Math.max(1, frameHeight)
+    };
+  };
+
+  const scaleFrame = selection.length === 1 ? transformFrame : null;
+  const scaleBase =
+    primary && scaleFrame
+      ? scaleBaseOf(primary, scaleFrame.bounds.width, scaleFrame.bounds.height)
+      : null;
+  const scaleX =
+    scaleFrame && scaleBase
+      ? (scaleFrame.bounds.width / scaleBase.width) * 100
+      : 100;
+  const scaleY =
+    scaleFrame && scaleBase
+      ? (scaleFrame.bounds.height / scaleBase.height) * 100
+      : 100;
+
+  /** 参照 Godot 的节点 scale：按百分比换算成选框缩放，并保留首次的基准尺寸。 */
+  const applyScaleTargets = (targetXPercent: number, targetYPercent: number) => {
+    const state = useAppStore.getState();
+    if (state.selection.length !== 1) return;
+    const frame = selectionFrame(state.doc, state.selection);
+    const object = getObject(state.doc, state.selection[0]);
+    if (!frame || !object || frame.bounds.width < 0.01 || frame.bounds.height < 0.01) return;
+    const base = scaleBaseOf(object, frame.bounds.width, frame.bounds.height);
+    const percentX = Math.min(1000, Math.max(1, targetXPercent));
+    const percentY = Math.min(1000, Math.max(1, targetYPercent));
+    const sx = (base.width * (percentX / 100)) / frame.bounds.width;
+    const sy = (base.height * (percentY / 100)) / frame.bounds.height;
+    if (Math.abs(sx - 1) < 1e-6 && Math.abs(sy - 1) < 1e-6) return;
+    let next = scaleDocumentObjectsInFrame(
+      state.doc,
+      state.selection,
+      frame,
+      frame.center,
+      sx,
+      sy
+    );
+    next = replaceObject(next, object.id, (item) => ({
+      ...item,
+      baseWidth: base.width,
+      baseHeight: base.height
+    }));
+    state.updateDoc(next, true);
+  };
+
+  const commitScaleX = (value: number) => {
+    if (!Number.isFinite(value)) return;
+    if (scaleUniform && scaleX > 0.01) {
+      const factor = value / scaleX;
+      applyScaleTargets(value, scaleY * factor);
+    } else {
+      applyScaleTargets(value, scaleY);
+    }
+  };
+
+  const commitScaleY = (value: number) => {
+    if (!Number.isFinite(value)) return;
+    if (scaleUniform && scaleY > 0.01) {
+      const factor = value / scaleY;
+      applyScaleTargets(scaleX * factor, value);
+    } else {
+      applyScaleTargets(scaleX, value);
+    }
+  };
+
+  const resetScale = () => applyScaleTargets(100, 100);
 
   // 只有自带 rotation 字段的单个图形能显示绝对角度；编组/多选的实际旋转发生在子对象上，
   // 若仍用 primary.rotation 作基准，重复输入会不断累加。
@@ -424,6 +512,42 @@ export function ObjectPropertiesPanel() {
               />
             ) : null}
           </div>
+          {scaleFrame && scaleBase ? (
+            <div className="scale-panel" data-testid="scale-panel">
+              <div className="scale-panel__head">
+                <span className="scale-panel__title">缩放</span>
+                <button
+                  type="button"
+                  className={`scale-link${scaleUniform ? ' is-active' : ''}`}
+                  data-testid="scale-link"
+                  aria-pressed={scaleUniform}
+                  title={
+                    scaleUniform
+                      ? '等比缩放：修改 X / Y 任一轴会按同一倍率同步另一轴'
+                      : '独立缩放：X / Y 分别调整'
+                  }
+                  onClick={() => setScaleUniform((value) => !value)}
+                >
+                  <Icon name={scaleUniform ? 'link' : 'unlink'} size={14} />
+                </button>
+                <em>{scaleUniform ? '等比' : '独立'}</em>
+                <button
+                  type="button"
+                  className="ghost-action scale-reset"
+                  disabled={
+                    Math.abs(scaleX - 100) < 0.05 && Math.abs(scaleY - 100) < 0.05
+                  }
+                  onClick={resetScale}
+                >
+                  重置
+                </button>
+              </div>
+              <div className="field-grid">
+                <NumberField label="X" value={scaleX} suffix="%" onCommit={commitScaleX} />
+                <NumberField label="Y" value={scaleY} suffix="%" onCommit={commitScaleY} />
+              </div>
+            </div>
+          ) : null}
           <div className="prop-actions prop-actions--wrap">
             <button type="button" className="ghost-action" disabled={selection.length < 2} onClick={groupSelection}>
               编组

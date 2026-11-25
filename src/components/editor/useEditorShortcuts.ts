@@ -178,20 +178,6 @@ export function useEditorShortcuts(): void {
         else notify('没有选中的对象');
         return;
       }
-      if (event.key.startsWith('Arrow')) {
-        const state = useAppStore.getState();
-        if (state.selection.length === 0) return;
-        event.preventDefault();
-        const step = event.shiftKey ? 10 : 1;
-        const dx = event.key === 'ArrowLeft' ? -step : event.key === 'ArrowRight' ? step : 0;
-        const dy = event.key === 'ArrowUp' ? -step : event.key === 'ArrowDown' ? step : 0;
-        state.updateDoc(
-          translateDocumentObjects(state.doc, state.selection, dx, dy),
-          true
-        );
-        return;
-      }
-
       // 画笔/橡皮尺寸快捷调节：[ 缩小、] 放大；Shift + 方括号调不透明度。
       const isBracketGrow = event.key === ']' || event.code === 'BracketRight';
       const isBracketShrink = event.key === '[' || event.code === 'BracketLeft';
@@ -271,4 +257,97 @@ export function useEditorShortcuts(): void {
     toggleLeftDock,
     toggleToolLabels
   ]);
+
+  /**
+   * 方向键微调：单独成 effect，避免文档每次更新重渲时把长按定时器清掉。
+   * 第一次按下记录一次撤销快照，长按期间只移动不写历史。
+   */
+  useEffect(() => {
+    const pressed = new Set<string>();
+    let delay: number | null = null;
+    let interval: number | null = null;
+    let step = 1;
+
+    const stop = () => {
+      if (delay !== null) {
+        window.clearTimeout(delay);
+        delay = null;
+      }
+      if (interval !== null) {
+        window.clearInterval(interval);
+        interval = null;
+      }
+      pressed.clear();
+    };
+
+    const apply = (record: boolean) => {
+      const state = useAppStore.getState();
+      if (state.selection.length === 0 || state.overlayDepth > 0) {
+        stop();
+        return;
+      }
+      const dx =
+        (pressed.has('ArrowRight') ? step : 0) -
+        (pressed.has('ArrowLeft') ? step : 0);
+      const dy =
+        (pressed.has('ArrowDown') ? step : 0) -
+        (pressed.has('ArrowUp') ? step : 0);
+      if (dx === 0 && dy === 0) return;
+      state.updateDoc(
+        translateDocumentObjects(state.doc, state.selection, dx, dy),
+        record
+      );
+    };
+
+    const start = () => {
+      if (delay !== null || interval !== null) return;
+      delay = window.setTimeout(() => {
+        delay = null;
+        interval = window.setInterval(() => apply(false), 33);
+      }, 260);
+    };
+
+    const isTyping = (target: EventTarget | null) => {
+      const element = target as HTMLElement | null;
+      return Boolean(
+        element &&
+          (element.tagName === 'INPUT' ||
+            element.tagName === 'TEXTAREA' ||
+            element.tagName === 'SELECT' ||
+            element.isContentEditable)
+      );
+    };
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!event.key.startsWith('Arrow')) return;
+      const state = useAppStore.getState();
+      if (state.selection.length === 0 || state.overlayDepth > 0) return;
+      if (isTyping(event.target)) return;
+      event.preventDefault();
+      // 浏览器自带的按键重复不可控且会多次写历史；长按由上面的定时器接管。
+      if (event.repeat) return;
+      const first = pressed.size === 0;
+      pressed.add(event.key);
+      step = event.shiftKey ? 10 : 1;
+      apply(first);
+      start();
+    };
+
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (!event.key.startsWith('Arrow')) return;
+      pressed.delete(event.key);
+      if (pressed.size === 0) stop();
+    };
+
+    const onBlur = () => stop();
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onBlur);
+    return () => {
+      stop();
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', onBlur);
+    };
+  }, []);
 }

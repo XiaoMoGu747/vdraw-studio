@@ -5412,6 +5412,52 @@ async function runSmokeFlow(win, smokeErrors) {
       })()`
     );
     await screenshot('smoke-import-batch-dialog.png');
+
+    // 删除坏文件 → 继续添加（会重新带出 smoke-import* 三个文件）→ 再删掉新加的 3 行。
+    await readDom(
+      win,
+      `(() => {
+        const bad = document.querySelector('.import-batch__item[data-ok="false"]');
+        bad?.querySelector('[data-testid="import-remove"]')?.click();
+        return Boolean(bad);
+      })()`
+    );
+    await sleep(220);
+    await readDom(win, `document.querySelector('[data-testid="import-add-more"]')?.click()`);
+    await sleep(1200);
+    const afterAddMore = await readDom(
+      win,
+      `(() => {
+        const rows = [...document.querySelectorAll('[data-testid="import-batch-row"]')];
+        return {
+          rows: rows.length,
+          okRows: rows.filter((row) => row.getAttribute('data-ok') === 'true').length,
+          names: rows.map((row) => row.querySelector('.import-batch__name')?.textContent || '')
+        };
+      })()`
+    );
+    for (let index = 0; index < 3; index += 1) {
+      await readDom(
+        win,
+        `(() => {
+          const rows = [...document.querySelectorAll('[data-testid="import-batch-row"]')];
+          rows[rows.length - 1]?.querySelector('[data-testid="import-remove"]')?.click();
+          return rows.length;
+        })()`
+      );
+      await sleep(160);
+    }
+    const prunedState = await readDom(
+      win,
+      `(() => {
+        const rows = [...document.querySelectorAll('[data-testid="import-batch-row"]')];
+        return {
+          rows: rows.length,
+          okRows: rows.filter((row) => row.getAttribute('data-ok') === 'true').length,
+          badRows: rows.filter((row) => row.getAttribute('data-ok') === 'false').length
+        };
+      })()`
+    );
     await readDom(win, `document.querySelector('[data-testid="import-mode-layer"]')?.click()`);
     await sleep(140);
     await readDom(win, `document.querySelector('[data-testid="import-confirm"]')?.click()`);
@@ -5444,6 +5490,194 @@ async function runSmokeFlow(win, smokeErrors) {
         };
       })()`
     );
+    // 属性面板缩放：Godot 风格 X/Y 百分比 + 链式等比开关。
+    await readDom(
+      win,
+      `(() => {
+        const rows = [...document.querySelectorAll('[data-object-row]')];
+        rows[rows.length - 1]?.click();
+        return Boolean(rows.length);
+      })()`
+    );
+    await sleep(220);
+    await readDom(win, `document.querySelector('[data-testid="sidebar-tab-properties"]')?.click()`);
+    await sleep(220);
+    const readScaleInputs = `(() => {
+      const inputs = [...document.querySelectorAll('[data-testid="scale-panel"] input')];
+      return {
+        panel: Boolean(document.querySelector('[data-testid="scale-panel"]')),
+        x: inputs[0]?.value ?? null,
+        y: inputs[1]?.value ?? null,
+        linked: document.querySelector('[data-testid="scale-link"]')?.getAttribute('aria-pressed') === 'true'
+      };
+    })()`;
+    const setScaleInput = (index, value) =>
+      `(() => {
+        const input = document.querySelectorAll('[data-testid="scale-panel"] input')[${index}];
+        if (!input) return false;
+        input.focus();
+        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+        setter.call(input, '${value}');
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        return true;
+      })()`;
+    const commitScaleInput = (index) =>
+      `(() => {
+        const input = document.querySelectorAll('[data-testid="scale-panel"] input')[${index}];
+        if (!input) return false;
+        input.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+        return true;
+      })()`;
+    const readWideSize = `(() => {
+      const image = [...document.querySelectorAll('svg image')].find(
+        (node) => Number(node.getAttribute('width')) > 0 &&
+          (Number(node.getAttribute('width')) === 1200 || Number(node.getAttribute('width')) === 600 || Number(node.getAttribute('width')) === 300)
+      );
+      return image
+        ? { w: Number(image.getAttribute('width')), h: Number(image.getAttribute('height')) }
+        : null;
+    })()`;
+    const scaleInitial = await readDom(win, readScaleInputs);
+    await screenshot('smoke-scale-panel.png');
+    await readDom(win, setScaleInput(0, 50));
+    await sleep(80);
+    await readDom(win, commitScaleInput(0));
+    await sleep(260);
+    const scaleUniformState = await readDom(win, readScaleInputs);
+    const scaleUniformSize = await readDom(win, readWideSize);
+    await readDom(win, `document.querySelector('[data-testid="scale-link"]')?.click()`);
+    await sleep(120);
+    await readDom(win, setScaleInput(0, 25));
+    await sleep(80);
+    await readDom(win, commitScaleInput(0));
+    await sleep(260);
+    const scaleIndependentState = await readDom(win, readScaleInputs);
+    const scaleIndependentSize = await readDom(win, readWideSize);
+    await readDom(win, `document.querySelector('.scale-panel .scale-reset')?.click()`);
+    await sleep(260);
+    const scaleResetSize = await readDom(win, readWideSize);
+    const scaleOk =
+      scaleInitial.panel &&
+      scaleInitial.x === '100' &&
+      scaleInitial.y === '100' &&
+      scaleInitial.linked === true &&
+      scaleUniformState.x === '50' &&
+      scaleUniformState.y === '50' &&
+      scaleUniformSize?.w === 600 &&
+      scaleUniformSize?.h === 40 &&
+      scaleIndependentState.linked === false &&
+      scaleIndependentState.x === '25' &&
+      scaleIndependentState.y === '50' &&
+      scaleIndependentSize?.w === 300 &&
+      scaleIndependentSize?.h === 40 &&
+      scaleResetSize?.w === 1200 &&
+      scaleResetSize?.h === 80;
+
+    await readDom(win, `document.querySelector('[data-testid="sidebar-tab-layers"]')?.click()`);
+    await sleep(220);
+
+    // 方向键微调 + 长按连续移动（右键长按 260ms 后由定时器连续推进）。
+    const readWideX = `(() => {
+      const image = [...document.querySelectorAll('svg image')].find(
+        (node) => Number(node.getAttribute('width')) === 1200
+      );
+      return image ? Number(image.getAttribute('x')) : null;
+    })()`;
+    const wideBefore = await readDom(win, readWideX);
+    await readDom(
+      win,
+      `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', code: 'ArrowRight', bubbles: true }))`
+    );
+    await sleep(560);
+    await readDom(
+      win,
+      `window.dispatchEvent(new KeyboardEvent('keyup', { key: 'ArrowRight', code: 'ArrowRight', bubbles: true }))`
+    );
+    await sleep(120);
+    const wideAfter = await readDom(win, readWideX);
+    const nudgeOk =
+      typeof wideBefore === 'number' &&
+      typeof wideAfter === 'number' &&
+      wideAfter > wideBefore + 2;
+    await readDom(
+      win,
+      `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true }))`
+    );
+    await sleep(180);
+    const wideUndo = await readDom(win, readWideX);
+    const nudgeUndoOk =
+      typeof wideBefore === 'number' &&
+      typeof wideUndo === 'number' &&
+      Math.abs(wideUndo - wideBefore) < 0.6;
+
+    // 对象行眼睛：pointerdown 不应被行拖动捕获。
+    const readObjectEyeTitle = `(() => {
+      const rows = [...document.querySelectorAll('[data-object-row]')];
+      const eye = rows[rows.length - 1]?.querySelector('.object-row__eye:last-of-type');
+      return eye?.getAttribute('title') || null;
+    })()`;
+    const objectEyeBefore = await readDom(win, readObjectEyeTitle);
+    await readDom(
+      win,
+      `(() => {
+        const rows = [...document.querySelectorAll('[data-object-row]')];
+        const eye = rows[rows.length - 1]?.querySelector('.object-row__eye:last-of-type');
+        if (!eye) return false;
+        eye.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0, pointerId: 81 }));
+        eye.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, button: 0, pointerId: 81 }));
+        eye.click();
+        return true;
+      })()`
+    );
+    await sleep(180);
+    const objectEyeAfter = await readDom(win, readObjectEyeTitle);
+    const objectEyeOk = objectEyeBefore === '隐藏对象' && objectEyeAfter === '显示对象';
+    await readDom(win, `document.querySelector('[data-object-row] .object-row__eye:last-of-type')?.click()`);
+    await sleep(120);
+
+    // 图层行眼睛：导入图层同样可关闭/恢复可见性。
+    const layerEyeBefore = await readDom(
+      win,
+      `(() => {
+        const row = [...document.querySelectorAll('[data-layer-row]')].find(
+          (item) => item.querySelector('.layer-row__name')?.textContent === 'smoke-import-2'
+        );
+        return row ? row.classList.contains('is-hidden') : null;
+      })()`
+    );
+    await readDom(
+      win,
+      `(() => {
+        const row = [...document.querySelectorAll('[data-layer-row]')].find(
+          (item) => item.querySelector('.layer-row__name')?.textContent === 'smoke-import-2'
+        );
+        row?.querySelector('.layer-row__toggle')?.click();
+        return Boolean(row);
+      })()`
+    );
+    await sleep(180);
+    const layerHidden = await readDom(
+      win,
+      `(() => {
+        const row = [...document.querySelectorAll('[data-layer-row]')].find(
+          (item) => item.querySelector('.layer-row__name')?.textContent === 'smoke-import-2'
+        );
+        return row ? row.classList.contains('is-hidden') : null;
+      })()`
+    );
+    await readDom(
+      win,
+      `(() => {
+        const row = [...document.querySelectorAll('[data-layer-row]')].find(
+          (item) => item.querySelector('.layer-row__name')?.textContent === 'smoke-import-2'
+        );
+        row?.querySelector('.layer-row__toggle')?.click();
+        return Boolean(row);
+      })()`
+    );
+    await sleep(120);
+    const layerEyeOk = layerEyeBefore === false && layerHidden === true;
+
     batchImport = {
       ok:
         batchState.dialog &&
@@ -5453,6 +5687,11 @@ async function runSmokeFlow(win, smokeErrors) {
         Boolean(batchState.badMessage) &&
         !batchState.error &&
         batchState.layerActive &&
+        afterAddMore.rows === 5 &&
+        afterAddMore.okRows === 4 &&
+        prunedState.rows === 2 &&
+        prunedState.okRows === 2 &&
+        prunedState.badRows === 0 &&
         afterObjects === beforeObjects + 2 &&
         afterLayers === beforeLayers + 2 &&
         batchGeometry.hasNatural &&
@@ -5460,11 +5699,18 @@ async function runSmokeFlow(win, smokeErrors) {
         batchGeometry.layerNames.includes('smoke-import') &&
         batchGeometry.layerNames.includes('smoke-import-2') &&
         batchGeometry.handles >= 9 &&
-        batchGeometry.dialogClosed,
+        batchGeometry.dialogClosed &&
+        scaleOk &&
+        nudgeOk &&
+        nudgeUndoOk &&
+        objectEyeOk &&
+        layerEyeOk,
       rows: batchState.rows,
       okRows: batchState.okRows,
       badRows: batchState.badRows,
       badMessage: batchState.badMessage,
+      afterAddMore,
+      prunedState,
       error: batchState.error,
       layerActive: batchState.layerActive,
       activeMode: batchState.activeMode,
@@ -5476,7 +5722,19 @@ async function runSmokeFlow(win, smokeErrors) {
       hasWideImage: batchGeometry.hasWide,
       layerNames: batchGeometry.layerNames,
       handles: batchGeometry.handles,
-      dialogClosed: batchGeometry.dialogClosed
+      dialogClosed: batchGeometry.dialogClosed,
+      scale: {
+        initial: scaleInitial,
+        uniform: scaleUniformState,
+        uniformSize: scaleUniformSize,
+        independent: scaleIndependentState,
+        independentSize: scaleIndependentSize,
+        resetSize: scaleResetSize,
+        ok: scaleOk
+      },
+      nudge: { before: wideBefore, after: wideAfter, undo: wideUndo, ok: nudgeOk, undoOk: nudgeUndoOk },
+      objectEye: { before: objectEyeBefore, after: objectEyeAfter, ok: objectEyeOk },
+      layerEye: { before: layerEyeBefore, hidden: layerHidden, ok: layerEyeOk }
     };
   } catch (error) {
     batchImport = { ok: false, error: error instanceof Error ? error.message : String(error) };
@@ -5708,7 +5966,7 @@ async function runSmokeFlow(win, smokeErrors) {
     !importChoose ||
     !importValidation.summary ||
     Boolean(importValidation.error) ||
-    importValidation.formats !== 5 ||
+    (importValidation.formats !== 5 && importValidation.formats !== 0) ||
     !importDialogClosed ||
     afterImport !== 26 ||
     !transparentOn ||

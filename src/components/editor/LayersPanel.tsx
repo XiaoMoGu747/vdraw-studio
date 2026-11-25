@@ -420,7 +420,9 @@ export function LayersPanel() {
   ) => {
     if (event.button !== 0) return;
     const target = event.target as HTMLElement;
-    if (target.closest('button, input, label, select')) return;
+    // 对象行的眼睛/锁是 role=button 的 span：必须在这里排除，
+    // 否则 pointerdown 会被行拖动捕获，随后的 click 永远落不到图标上。
+    if (target.closest('button, input, label, select, .object-row__eye')) return;
     objectDragRef.current = {
       id: object.id,
       startX: event.clientX,
@@ -536,6 +538,7 @@ export function LayersPanel() {
             role="button"
             tabIndex={-1}
             title={object.locked ? '解锁对象' : '锁定对象'}
+            onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => {
               event.stopPropagation();
               toggleObjectLocked(object.id);
@@ -548,6 +551,7 @@ export function LayersPanel() {
             role="button"
             tabIndex={-1}
             title={object.visible ? '隐藏对象' : '显示对象'}
+            onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => {
               event.stopPropagation();
               toggleObjectVisible(object.id);

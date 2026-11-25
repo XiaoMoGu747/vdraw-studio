@@ -445,7 +445,9 @@ export function hitTestDocument(
         if (obj.ringFrame && obj.ringCenters && obj.ringCenters.length > 0) {
           // 稠环外层把多个环心收在同一个编组里，点任一环内部都选整个稠环体系。
           hit = obj.ringCenters.some(
-            (center) => Math.hypot(point.x - center.x, point.y - center.y) <= 32 + tolerance
+            (center) =>
+              Math.hypot(point.x - center.x, point.y - center.y) <=
+              32 * (obj.ringScale ?? 1) + tolerance
           );
         } else if (obj.ringStyle || obj.ringFrame) {
           // 与渲染共用同一份环骨架几何，避免命中区域和内圈错位；
@@ -609,10 +611,15 @@ export function scaleObject(
       break;
     }
     case 'line':
-    case 'bond':
     case 'arrow':
       next.start = mapPoint(next.start);
       next.end = mapPoint(next.end);
+      break;
+    case 'bond':
+      next.start = mapPoint(next.start);
+      next.end = mapPoint(next.end);
+      // 双键/三键的平行线间距跟随缩放，保持化学结构比例。
+      next.scale = Math.max(0.05, (next.scale ?? 1) * scalePaintFactor(sx, sy));
       break;
     case 'polygon':
       next.points = next.points.map(mapPoint);
@@ -642,6 +649,13 @@ export function scaleObject(
     }
     case 'group':
       if (next.ringCenters) next.ringCenters = next.ringCenters.map(mapPoint);
+      // 稠环内圈半径独立于顶点坐标，必须单独记录缩放倍率。
+      next.ringScale = Math.max(0.05, (next.ringScale ?? 1) * scalePaintFactor(sx, sy));
+      break;
+    case 'ring':
+      next.scale = Math.max(0.05, (next.scale ?? 1) * scalePaintFactor(sx, sy));
+      next.width = Math.max(1, next.width * Math.abs(sx));
+      next.height = Math.max(1, next.height * Math.abs(sy));
       break;
     default:
       break;
@@ -933,10 +947,14 @@ function scaleObjectInFrame(
       break;
     }
     case 'line':
-    case 'bond':
     case 'arrow':
       next.start = mapPoint(next.start);
       next.end = mapPoint(next.end);
+      break;
+    case 'bond':
+      next.start = mapPoint(next.start);
+      next.end = mapPoint(next.end);
+      next.scale = Math.max(0.05, (next.scale ?? 1) * scalePaintFactor(sx, sy));
       break;
     case 'polygon':
       next.points = next.points.map(mapPoint);
@@ -966,6 +984,12 @@ function scaleObjectInFrame(
     }
     case 'group':
       if (next.ringCenters) next.ringCenters = next.ringCenters.map(mapPoint);
+      next.ringScale = Math.max(0.05, (next.ringScale ?? 1) * scalePaintFactor(sx, sy));
+      break;
+    case 'ring':
+      next.scale = Math.max(0.05, (next.scale ?? 1) * scalePaintFactor(sx, sy));
+      next.width = Math.max(1, next.width * Math.abs(sx));
+      next.height = Math.max(1, next.height * Math.abs(sy));
       break;
     default:
       break;

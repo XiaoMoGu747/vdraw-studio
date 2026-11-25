@@ -235,6 +235,7 @@ export function createBondObject(
     bondType,
     start,
     end,
+    scale: 1,
     aromaticSide
   };
 }

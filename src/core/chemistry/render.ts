@@ -31,7 +31,8 @@ export function chemBondShape(doc: VDrawDocument, bond: BondObject): ChemBondSha
     start,
     end,
     geometry: buildBondGeometry(bond.bondType, start, end, {
-      spacing: 4.2,
+      // 平行线间距随键的缩放倍率同步变化，放大苯环/三键后不会挤在一起。
+      spacing: Math.max(0.6, 4.2 * (bond.scale ?? 1)),
       aromaticSide: bond.aromaticSide ?? 1,
       innerSide: bond.ringInnerSide
     })

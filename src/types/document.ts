@@ -143,6 +143,12 @@ export interface SceneObjectBase {
   width: number;
   height: number;
   rotation: number;
+  /**
+   * 属性面板缩放基准：首次用缩放面板时记录当时的显示尺寸。
+   * 缺省时以当前 width/height 为基准；位图始终以 naturalWidth/Height 为基准。
+   */
+  baseWidth?: number;
+  baseHeight?: number;
   style: Style;
   /** 由对称工具生成的镜像：记录源对象与镜像类型，供"同步镜像"重新生成。 */
   mirrorOf?: ID;
@@ -265,6 +271,8 @@ export interface GroupObject extends SceneObjectBase {
    * 稠环外层用多个圆心表示每个苯环，避免为每个环再嵌套一层编组。
    */
   ringCenters?: Vec[];
+  /** 稠环内圈半径的缩放倍率；旧文件缺省为 1。 */
+  ringScale?: number;
   /** 稠环内圈样式；与 ringStyle 分开，避免外层被误判成单个苯环。 */
   ringCircleStyle?: 'pauling';
 }
@@ -284,6 +292,8 @@ export interface BondObject extends SceneObjectBase {
   bondType: BondType;
   start: Vec;
   end: Vec;
+  /** 缩放倍率：双键/三键的平行线间距随之同步缩放；旧文件缺省为 1。 */
+  scale?: number;
   /** 芳香键内侧线方向，由所在环的质心决定 */
   aromaticSide?: 1 | -1;
   /** 环内双键的第二条线方向（凯库勒式苯环），指向环心 */
