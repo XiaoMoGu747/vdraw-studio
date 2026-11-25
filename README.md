@@ -127,8 +127,14 @@ node node_modules/electron/install.js
 - 默认保存位置：程序所在目录的 `VDraw保存`；只读安装目录自动退回“文档/VDraw保存”
 - 画布页顶部有独立“保存”按钮，`Ctrl+S` 与菜单“保存”行为一致，首次保存不再弹出路径选择
 - 最近文件记录（仅本机 localStorage，可点击重新打开）
-- 导入 SVG：`rect / circle / ellipse / line / polyline / polygon / path / text`，
-  支持基础 transform（含旋转/缩放分解）、fill/stroke 与 `M/L/H/V/C/S/Q/T/A/Z` 路径命令
+- 导入文件（`文件 → 导入文件…`、`Ctrl+K` 命令面板或启动页「导入文件」）：支持 `.vdraw`（含旧版
+  `.json`）工程、`.svg` 矢量图与 PNG / JPEG / WebP / GIF / BMP 位图；工程文件完整还原页面、图层、样式、
+  对象与对称/辅助线，SVG 还原 `rect / circle / ellipse / line / polyline / polygon / path / text` 及基础
+  transform（含旋转/缩放分解）、fill/stroke 与 `M/L/H/V/C/S/Q/T/A/Z` 路径命令；位图按文件头识别，
+  校验解码结果与像素上限后作为可移动/缩放/旋转的位图对象内嵌进文档。导入前校验 JSON 结构、schema 版本、
+  页面尺寸、重复 ID 与悬空编组/镜像/裁剪引用，损坏或不受支持的格式会给出具体原因与修复提示；可选
+  **覆盖当前画布**、**新建画布**或**合并到当前画布**（覆盖/合并可 `Ctrl+Z` 撤销）。桌面端走原生文件对话框，
+  网页端走浏览器文件选择与拖拽，数据只在本机读取；PDF 属于导出格式，不支持反向导入
 - 导出 SVG（矢量）、PNG（2× 光栅，可透明）、JPG（2× 光栅，质量 50–100%）、
   PDF（Chromium 矢量打印，文字可选中）
 - 化学互操作：导出 MOL（V2000，含电荷/同位素 M 行）与 SMILES；暂不提供 MOL/SDF/SMILES 导入
@@ -174,7 +180,9 @@ node node_modules/electron/install.js
 - 不包含 3D 结构、图像/手写识别、AI、账号、云同步或多人协作。
 - PDF 由 Chromium `printToPDF` 生成矢量页，文字可选中；SVG 保持矢量；PNG / JPG 由同一 SVG 管线光栅化。
 - JPG 无透明通道，始终以纸张色铺底；PDF 同样固定白底。
-- SVG 导入为常用图元子集，不解析 CSS 类、外部图片、滤镜与复杂裁剪；圆弧按三次贝塞尔近似。
+- SVG 导入为常用图元子集，不解析 CSS 类、外部图片、滤镜与复杂裁剪；圆弧按三次贝塞尔近似；被跳过的元素会在导入对话框中列出。
+- 位图导入只支持 PNG / JPEG / WebP / GIF / BMP，且会内嵌为 data URL（单张 32 MB、单边 12000 px、40 MP 上限）；TIFF / AVIF / HEIC 需先转成 PNG/JPEG，GIF 动图在 PNG / JPG / PDF 中按第一帧导出、SVG 保留动画数据。PDF 仅用于导出，不能反向导入。
+- `.vdraw` 导入会拒绝高于当前 `schemaVersion` 的文件，避免静默丢字段；位图对象只接受内嵌 data URL，不接受外部图片链接。位图对象是本版本新增类型，旧版应用打开含位图的工程时可能无法显示该对象，建议使用同版本打开。
 - 文档需手动保存；自动恢复点只用于异常退出后的找回，不替代正式保存；撤销历史仅保存在当前会话内。
 
 ## 文档

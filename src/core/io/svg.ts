@@ -3,6 +3,7 @@ import type {
   BondObject,
   ExportRegion,
   GroupObject,
+  ImageObject,
   PathNode,
   PathObject,
   SceneObject,
@@ -337,6 +338,10 @@ function objectToSvg(
     }
     case 'text':
       return textToSvg(obj);
+    case 'image': {
+      const image = obj as ImageObject;
+      return `<image x="${image.x}" y="${image.y}" width="${Math.max(0, image.width)}" height="${Math.max(0, image.height)}" preserveAspectRatio="none" href="${escapeXml(image.src)}" opacity="${image.style.opacity}"${rotationTransform(image)}/>`;
+    }
     case 'bond': {
       const shape = chemBondShape(doc, obj);
       const stroke = solid(obj.style.stroke.paint) === 'none' ? '#1b1b1b' : solid(obj.style.stroke.paint);

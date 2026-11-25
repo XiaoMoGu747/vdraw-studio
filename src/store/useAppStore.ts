@@ -442,6 +442,8 @@ interface AppState {
   exportTransparent: boolean;
   /** 导出面板：格式 / 范围（整页或框选区域）/ 选区矩形 */
   exportPanelOpen: boolean;
+  /** 导入对话框：本地文件校验、覆盖/新建/合并选择。 */
+  importPanelOpen: boolean;
   exportFormat: ExportFormat;
   exportScope: ExportScope;
   exportRegion: ExportRegion | null;
@@ -645,6 +647,8 @@ interface AppState {
   toggleExportTransparent: () => void;
   openExportPanel: (format?: ExportFormat, scope?: ExportScope) => void;
   closeExportPanel: () => void;
+  openImportPanel: () => void;
+  closeImportPanel: () => void;
   setExportFormat: (format: ExportFormat) => void;
   setExportScope: (scope: ExportScope) => void;
   setExportRegion: (region: ExportRegion) => void;
@@ -904,6 +908,7 @@ export const useAppStore = create<AppState>((set, get) => {
     chemReport: null,
     exportTransparent: false,
     exportPanelOpen: false,
+    importPanelOpen: false,
     exportFormat: 'png',
     exportScope: 'page',
     exportRegion: null,
@@ -2603,6 +2608,11 @@ export const useAppStore = create<AppState>((set, get) => {
     },
 
     closeExportPanel: () => set({ exportPanelOpen: false }),
+
+    // 导入与导出互斥：同时打开会叠两层浮层，关闭按钮也会互相遮挡。
+    openImportPanel: () => set({ importPanelOpen: true, exportPanelOpen: false }),
+
+    closeImportPanel: () => set({ importPanelOpen: false }),
 
     setExportFormat: (format) => set({ exportFormat: format }),
 

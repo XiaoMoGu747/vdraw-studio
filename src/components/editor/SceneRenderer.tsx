@@ -5,6 +5,7 @@ import type {
   BondObject,
   EllipseObject,
   GroupObject,
+  ImageObject,
   LineObject,
   PathObject,
   PolygonObject,
@@ -454,6 +455,24 @@ export const SceneObjectView = memo(
             </tspan>
           ))}
         </text>
+      );
+    }
+    case 'image': {
+      const image = object as ImageObject;
+      const transform = image.rotation
+        ? `rotate(${image.rotation} ${image.x + image.width / 2} ${image.y + image.height / 2})`
+        : undefined;
+      return (
+        <image
+          href={image.src}
+          x={image.x}
+          y={image.y}
+          width={Math.max(0, image.width)}
+          height={Math.max(0, image.height)}
+          preserveAspectRatio="none"
+          opacity={style.opacity}
+          transform={transform}
+        />
       );
     }
     case 'bond':

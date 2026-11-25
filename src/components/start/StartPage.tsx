@@ -67,6 +67,7 @@ export function StartPage() {
   const removeRecent = useAppStore((state) => state.removeRecent);
   const notify = useAppStore((state) => state.notify);
   const startDocumentWith = useAppStore((state) => state.startDocumentWith);
+  const openImportPanel = useAppStore((state) => state.openImportPanel);
   const fileActions = useFileActions();
   const bridge = window.vdraw;
   const [maximized, setMaximized] = useState(false);
@@ -173,6 +174,18 @@ export function StartPage() {
             </span>
             <strong>打开画布</strong>
             <em>选择本地 .vdraw 文件</em>
+          </button>
+          <button
+            type="button"
+            className="launcher-card"
+            data-testid="start-import"
+            onClick={openImportPanel}
+          >
+            <span className="launcher-card__icon">
+              <Icon name="upload" size={26} />
+            </span>
+            <strong>导入文件</strong>
+            <em>工程 / SVG / 位图</em>
           </button>
         </div>
 

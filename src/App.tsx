@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useAppStore } from './store/useAppStore';
 import { StartPage } from './components/start/StartPage';
 import { EditorView } from './components/editor/EditorView';
+import { ImportDialog } from './components/editor/ImportDialog';
 import { Toasts } from './components/ui/Toasts';
 import { clearAutosave, readAutosave, writeAutosave } from './core/io/autosave';
 import type { VDrawDocument } from './types/document';
@@ -129,6 +130,7 @@ export default function App() {
   return (
     <>
       {route === 'start' ? <StartPage /> : <EditorView />}
+      <ImportDialog />
       <Toasts />
     </>
   );

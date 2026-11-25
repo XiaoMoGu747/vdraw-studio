@@ -87,6 +87,7 @@ export function MenuBar() {
   const exportTransparent = useAppStore((state) => state.exportTransparent);
   const toggleExportTransparent = useAppStore((state) => state.toggleExportTransparent);
   const openExportPanel = useAppStore((state) => state.openExportPanel);
+  const openImportPanel = useAppStore((state) => state.openImportPanel);
   const openSettings = useAppStore((state) => state.openSettings);
 
   const centerAnchor = { x: viewportSize.width / 2, y: viewportSize.height / 2 };
@@ -186,7 +187,12 @@ export function MenuBar() {
         { id: 'save', label: '保存', shortcut: 'Ctrl+S', onSelect: () => void fileActions.save() },
         { id: 'save-as', label: '另存为…', shortcut: 'Ctrl+Shift+S', onSelect: () => void fileActions.save(true), separatorAfter: false },
         { id: 'open-save-dir', label: '打开保存文件夹', onSelect: () => void fileActions.openSaveDir(), separatorAfter: true },
-        { id: 'import-svg', label: '导入 SVG…', onSelect: () => void fileActions.importSvg() },
+        {
+          id: 'import-file',
+          label: '导入文件（工程 / SVG / 位图）…',
+          onSelect: openImportPanel,
+          separatorAfter: true
+        },
         {
           id: 'export-transparent',
           label: '无背景导出（PNG / SVG）',

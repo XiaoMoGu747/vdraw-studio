@@ -1267,12 +1267,42 @@ async function runSmokeFlow(win, smokeErrors) {
   await readDom(
     win,
     `(() => {
-      const item = [...document.querySelectorAll('.menu-dropdown .menu-item')].find((el) => (el.textContent || '').includes('导入 SVG'));
+      const item = [...document.querySelectorAll('.menu-dropdown .menu-item')].find((el) => (el.textContent || '').includes('导入文件'));
       if (item) item.click();
       return Boolean(item);
     })()`
   );
+  await sleep(320);
+  const importDialogOpen = await readDom(
+    win,
+    `Boolean(document.querySelector('[data-testid="import-dialog"]'))`
+  );
+  const importChoose = await readDom(
+    win,
+    `(() => {
+      const button = document.querySelector('[data-testid="import-choose"]');
+      if (button) button.click();
+      return Boolean(button);
+    })()`
+  );
   await sleep(900);
+  const importValidation = await readDom(
+    win,
+    `(() => ({
+      summary: Boolean(document.querySelector('[data-testid="import-summary"]')),
+      error: document.querySelector('[data-testid="import-error"]')?.textContent || null,
+      formats: document.querySelectorAll('.import-formats li').length
+    }))()`
+  );
+  // 合并到当前画布：与旧「导入 SVG」一致，追加 4 个图元（矩形/圆/路径/文本）。
+  await readDom(win, `document.querySelector('[data-testid="import-mode-append"]')?.click()`);
+  await sleep(160);
+  await readDom(win, `document.querySelector('[data-testid="import-confirm"]')?.click()`);
+  await sleep(900);
+  const importDialogClosed = await readDom(
+    win,
+    `!document.querySelector('[data-testid="import-dialog"]')`
+  );
   const afterImport = await countObjects();
 
   // 框选区域导出：面板打开 → 精确输入 X/Y/W/H → 确认，落盘尺寸应为选区 ×2。
@@ -4101,6 +4131,10 @@ async function runSmokeFlow(win, smokeErrors) {
       savedKekule,
       afterDirtyRect,
       afterOpen,
+      importDialogOpen,
+      importChoose,
+      importValidation,
+      importDialogClosed,
       afterImport,
       transparentOn,
       pngCornerAlpha,
@@ -5140,6 +5174,175 @@ async function runSmokeFlow(win, smokeErrors) {
     console.error('[smoke] eraser scenario failures:\n- ' + scenarioFailures.join('\n- '));
   }
 
+  // ---- 位图导入：文件头识别 → 渲染进程解码 → 作为位图对象进入画布与导出管线 ----
+  const pngBase64 =
+    'iVBORw0KGgoAAAANSUhEUgAAAPAAAAB4CAYAAADMtn8nAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAF5SURBVHhe7dMxEQAgEMCwd4YivOMAdhz0LkOW7p21zwWa5g9Ah4EhzMAQZmAIMzCEGRjCDAxhBoYwA0OYgSHMwBBmYAgzMIQZGMIMDGEGhjADQ5iBIczAEGZgCDMwhBkYwgwMYQaGMANDmIEhzMAQZmAIMzCEGRjCDAxhBoYwA0OYgSHMwBBmYAgzMIQZGMIMDGEGhjADQ5iBIczAEGZgCDMwhBkYwgwMYQaGMANDmIEhzMAQZmAIMzCEGRjCDAxhBoYwA0OYgSHMwBBmYAgzMIQZGMIMDGEGhjADQ5iBIczAEGZgCDMwhBkYwgwMYQaGMANDmIEhzMAQZmAIMzCEGRjCDAxhBoYwA0OYgSHMwBBmYAgzMIQZGMIMDGEGhjADQ5iBIczAEGZgCDMwhBkYwgwMYQaGMANDmIEhzMAQZmAIMzCEGRjCDAxhBoYwA0OYgSHMwBBmYAgzMIQZGMIMDGEGhjADQ5iBIczAEGZgCDMwhBkYwgwMYQ8D1C6srD207QAAAABJRU5ErkJggg==';
+  const imagePngPath = path.join(outDir, 'smoke-import.png');
+  const imageSvgPath = path.join(outDir, 'smoke-import.svg');
+  const imageSvgHold = `${imageSvgPath}.hold`;
+  fs.writeFileSync(imagePngPath, Buffer.from(pngBase64, 'base64'));
+  let imageSvgHeld = false;
+  if (fs.existsSync(imageSvgPath)) {
+    fs.renameSync(imageSvgPath, imageSvgHold);
+    imageSvgHeld = true;
+  }
+  let imageImport = { ok: false };
+  try {
+    const beforeImage = await countObjects();
+    await readDom(
+      win,
+      `[...document.querySelectorAll('.menubar__trigger')].find((el) => el.textContent === '文件').click()`
+    );
+    await sleep(180);
+    await readDom(
+      win,
+      `(() => {
+        const item = [...document.querySelectorAll('.menu-dropdown .menu-item')].find((el) => (el.textContent || '').includes('导入文件'));
+        if (item) item.click();
+        return Boolean(item);
+      })()`
+    );
+    await sleep(280);
+    const dialogOpen = await readDom(
+      win,
+      `Boolean(document.querySelector('[data-testid="import-dialog"]'))`
+    );
+    await readDom(
+      win,
+      `(() => {
+        const button = document.querySelector('[data-testid="import-choose"]');
+        if (button) button.click();
+        return Boolean(button);
+      })()`
+    );
+    await sleep(900);
+    const summary = await readDom(
+      win,
+      `(() => ({
+        open: Boolean(document.querySelector('[data-testid="import-summary"]')),
+        badge: document.querySelector('.import-badge')?.textContent || '',
+        error: document.querySelector('[data-testid="import-error"]')?.textContent || null,
+        body: document.querySelector('[data-testid="import-summary"]')?.textContent || ''
+      }))()`
+    );
+    const dialogStyle = await readDom(
+      win,
+      `(() => {
+        const backdrop = document.querySelector('.modal-backdrop');
+        const modal = document.querySelector('.modal');
+        if (!backdrop || !modal) return { present: false };
+        const br = backdrop.getBoundingClientRect();
+        const mr = modal.getBoundingClientRect();
+        const bs = getComputedStyle(backdrop);
+        const ms = getComputedStyle(modal);
+        return {
+          present: true,
+          backdrop: { z: bs.zIndex, display: bs.display, opacity: bs.opacity, visibility: bs.visibility, x: br.x, y: br.y, w: br.width, h: br.height },
+          modal: { z: ms.zIndex, display: ms.display, opacity: ms.opacity, visibility: ms.visibility, x: mr.x, y: mr.y, w: mr.width, h: mr.height, transform: ms.transform }
+        };
+      })()`
+    );
+    // 冒烟窗口可能被其他窗口遮挡：截图前强制前置并等一帧，确保捕获到浮层本身。
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+    await readDom(
+      win,
+      `new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))))`
+    );
+    await sleep(240);
+    await screenshot('smoke-import-image-dialog.png');
+    await readDom(win, `document.querySelector('[data-testid="import-mode-append"]')?.click()`);
+    await sleep(140);
+    await readDom(win, `document.querySelector('[data-testid="import-confirm"]')?.click()`);
+    await sleep(900);
+    const afterImage = await countObjects();
+    const rendered = await readDom(
+      win,
+      `[...document.querySelectorAll('svg image')].some((node) => (node.getAttribute('href') || '').startsWith('data:image/png;base64,'))`
+    );
+    // 选中刚导入的位图 → 导出 SVG：验证位图进入导出管线且 data URL 被原样内嵌。
+    await readDom(win, `document.querySelector('[data-testid="export-menu-button"]')?.click()`);
+    await sleep(220);
+    await readDom(win, `document.querySelector('[data-testid="export-region-entry"]')?.click()`);
+    await sleep(340);
+    await readDom(win, `document.querySelector('[data-testid="export-scope-selection"]')?.click()`);
+    await sleep(180);
+    await readDom(win, `document.querySelector('[data-testid="export-format-svg"]')?.click()`);
+    await sleep(420);
+    await readDom(win, `document.querySelector('[data-testid="export-confirm"]')?.click()`);
+    await sleep(1500);
+    const exportedSvgPath = path.join(outDir, 'smoke-export.svg');
+    const exportedImageSvg = fs.existsSync(exportedSvgPath)
+      ? fs.readFileSync(exportedSvgPath, 'utf8')
+      : '';
+    const svgHasImage =
+      exportedImageSvg.includes('<image') &&
+      exportedImageSvg.includes('data:image/png;base64,');
+
+    // 位图光栅导出：与 SVG 共用同一条渲染管线，中心像素应落在导入的蓝色块上。
+    await readDom(win, `document.querySelector('[data-testid="export-menu-button"]')?.click()`);
+    await sleep(220);
+    await readDom(win, `document.querySelector('[data-testid="export-region-entry"]')?.click()`);
+    await sleep(340);
+    await readDom(win, `document.querySelector('[data-testid="export-scope-selection"]')?.click()`);
+    await sleep(180);
+    await readDom(win, `document.querySelector('[data-testid="export-format-png"]')?.click()`);
+    await sleep(600);
+    await readDom(win, `document.querySelector('[data-testid="export-confirm"]')?.click()`);
+    await sleep(1500);
+    const rasterImagePath = path.join(outDir, 'smoke-export.png');
+    const rasterImage = fs.existsSync(rasterImagePath)
+      ? nativeImage.createFromPath(rasterImagePath)
+      : null;
+    const rasterSize = rasterImage && !rasterImage.isEmpty() ? rasterImage.getSize() : null;
+    const rasterBitmap =
+      rasterImage && !rasterImage.isEmpty() ? rasterImage.getBitmap() : null;
+    let rasterPixel = null;
+    if (rasterBitmap && rasterSize) {
+      const x = Math.floor(rasterSize.width / 2);
+      const y = Math.floor(rasterSize.height / 2);
+      const index = (y * rasterSize.width + x) * 4;
+      rasterPixel = {
+        b: rasterBitmap[index],
+        g: rasterBitmap[index + 1],
+        r: rasterBitmap[index + 2],
+        a: rasterBitmap[index + 3]
+      };
+    }
+    const rasterHasImage = Boolean(
+      rasterPixel && rasterPixel.a > 200 && rasterPixel.b > 200 && rasterPixel.r < 120
+    );
+    imageImport = {
+      ok:
+        dialogOpen &&
+        summary.open &&
+        !summary.error &&
+        summary.badge.includes('PNG') &&
+        summary.body.includes('240 × 120') &&
+        afterImage === beforeImage + 1 &&
+        rendered &&
+        svgHasImage &&
+        rasterHasImage,
+      dialogOpen,
+      badge: summary.badge,
+      error: summary.error,
+      added: afterImage - beforeImage,
+      rendered,
+      svgHasImage,
+      rasterSize,
+      rasterPixel,
+      rasterHasImage,
+      dialogStyle
+    };
+  } catch (error) {
+    imageImport = { ok: false, error: error instanceof Error ? error.message : String(error) };
+  } finally {
+    fs.rmSync(imagePngPath, { force: true });
+    if (imageSvgHeld && fs.existsSync(imageSvgHold)) fs.renameSync(imageSvgHold, imageSvgPath);
+  }
+  console.log('IMAGE_IMPORT ' + JSON.stringify(imageImport));
+
   const failed =
     alphaClip.defs <= 0 ||
     alphaClip.refs <= 0 ||
@@ -5356,6 +5559,12 @@ async function runSmokeFlow(win, smokeErrors) {
     !saveInfo.backButton ||
     afterDirtyRect !== 23 ||
     afterOpen !== 22 ||
+    !importDialogOpen ||
+    !importChoose ||
+    !importValidation.summary ||
+    Boolean(importValidation.error) ||
+    importValidation.formats !== 5 ||
+    !importDialogClosed ||
     afterImport !== 26 ||
     !transparentOn ||
     pngCornerAlpha !== 0 ||
@@ -5694,6 +5903,7 @@ async function runSmokeFlow(win, smokeErrors) {
     !brushLibrary.glyph ||
     !brushLibrary.multiplyActive ||
     scenarioFailures.length > 0 ||
+    !imageImport.ok ||
     smokeErrors.length > 0;
 
   if (failed) {

@@ -134,7 +134,8 @@ function computeObjectBounds(obj: SceneObject, doc?: VDrawDocument): Rect {
   switch (obj.type) {
     case 'rect':
     case 'ellipse':
-    case 'text': {
+    case 'text':
+    case 'image': {
       if (!obj.rotation) return { x: obj.x, y: obj.y, width: obj.width, height: obj.height };
       const cx = obj.x + obj.width / 2;
       const cy = obj.y + obj.height / 2;
@@ -354,7 +355,8 @@ export function hitTestObject(
   if (!obj.visible) return false;
   switch (obj.type) {
     case 'rect':
-    case 'text': {
+    case 'text':
+    case 'image': {
       const cx = obj.x + obj.width / 2;
       const cy = obj.y + obj.height / 2;
       const angle = ((obj.rotation ?? 0) * Math.PI) / 180;
@@ -587,12 +589,13 @@ export function scaleObject(
   const next: SceneObject = { ...obj };
   switch (next.type) {
     case 'rect':
-    case 'ellipse': {
+    case 'ellipse':
+    case 'image': {
       const topLeft = mapPoint({ x: next.x, y: next.y });
       next.x = topLeft.x;
       next.y = topLeft.y;
-      next.width = Math.max(1, next.width * sx);
-      next.height = Math.max(1, next.height * sy);
+      next.width = Math.max(1, next.width * Math.abs(sx));
+      next.height = Math.max(1, next.height * Math.abs(sy));
       break;
     }
     case 'text': {
@@ -669,7 +672,8 @@ export function rotateObject(obj: SceneObject, center: Vec, angleDeg: number): S
   switch (next.type) {
     case 'rect':
     case 'ellipse':
-    case 'text': {
+    case 'text':
+    case 'image': {
       const objectCenter = { x: next.x + next.width / 2, y: next.y + next.height / 2 };
       const rotated = rotatePoint(objectCenter, center, angleDeg);
       next.x = rotated.x - next.width / 2;
@@ -830,8 +834,8 @@ export interface SelectionFrame {
 /**
  * 对象自身的“未旋转盒子”。
  *
- * rect / ellipse / text 的旋转由渲染期的 `rotate(angle cx cy)` 承担，几何字段本身
- * 仍是不旋转的，因此它们的局部盒就是 x/y/width/height；其它类型（直线、多边形、
+ * rect / ellipse / text / image 的旋转由渲染期的 `rotate(angle cx cy)` 承担，几何字段
+ * 本身仍是不旋转的，因此它们的局部盒就是 x/y/width/height；其它类型（直线、多边形、
  * 路径、化学对象）旋转已烘焙进坐标，直接取几何包围盒。
  *
  * 注意：`getObjectBounds` 对旋转过的 rect/ellipse/text 返回的是**旋转后的轴对齐包围盒**，
@@ -842,6 +846,7 @@ export function objectLocalBounds(obj: SceneObject, doc?: VDrawDocument): Rect {
     case 'rect':
     case 'ellipse':
     case 'text':
+    case 'image':
       return { x: obj.x, y: obj.y, width: obj.width, height: obj.height };
     default:
       return getObjectBounds(obj, doc);
@@ -854,7 +859,12 @@ export function objectLocalBounds(obj: SceneObject, doc?: VDrawDocument): Rect {
  * 不参与绘制；选框必须与渲染保持一致，否则会多转一次。
  */
 export function hasOwnRotation(obj: SceneObject): boolean {
-  return obj.type === 'rect' || obj.type === 'ellipse' || obj.type === 'text';
+  return (
+    obj.type === 'rect' ||
+    obj.type === 'ellipse' ||
+    obj.type === 'text' ||
+    obj.type === 'image'
+  );
 }
 
 /** 选中框的局部坐标框：单对象沿用自身盒与旋转角，多选使用轴对齐包围盒。 */
@@ -901,7 +911,8 @@ function scaleObjectInFrame(
     // rect / ellipse / text 的 x/y/w/h 是**未旋转的本地坐标**，缩放必须在本地系里做；
     // 用页面坐标的中心回填会让旋转后的图形在缩放时整体漂移。
     case 'rect':
-    case 'ellipse': {
+    case 'ellipse':
+    case 'image': {
       const center = mapLocal({ x: next.x + next.width / 2, y: next.y + next.height / 2 });
       next.width = Math.max(1, next.width * Math.abs(sx));
       next.height = Math.max(1, next.height * Math.abs(sy));

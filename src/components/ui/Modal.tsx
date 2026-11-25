@@ -10,9 +10,19 @@ interface ModalProps {
   children: ReactNode;
   footer?: ReactNode;
   size?: 'sm' | 'md';
+  /** 额外的对话框修饰类，用于单个面板的宽度/滚动高度微调。 */
+  className?: string;
 }
 
-export function Modal({ title, subtitle, onClose, children, footer, size = 'md' }: ModalProps) {
+export function Modal({
+  title,
+  subtitle,
+  onClose,
+  children,
+  footer,
+  size = 'md',
+  className
+}: ModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   useFocusTrap(dialogRef, true, onClose);
 
@@ -20,7 +30,7 @@ export function Modal({ title, subtitle, onClose, children, footer, size = 'md' 
     <div className="modal-backdrop" onPointerDown={onClose}>
       <div
         ref={dialogRef}
-        className={`modal modal--${size}`}
+        className={`modal modal--${size}${className ? ` ${className}` : ''}`}
         role="dialog"
         aria-modal="true"
         aria-label={title}

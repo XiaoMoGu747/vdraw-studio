@@ -45,6 +45,7 @@ export type IconName =
   | 'distributeH'
   | 'distributeV'
   | 'download'
+  | 'upload'
   | 'folder'
   | 'file'
   | 'save'

@@ -19,6 +19,7 @@ import {
   createAtomObject,
   createBondObject,
   createGroupObject,
+  createImageObject,
   createLineObject,
   createPathObject,
   createRectObject,
@@ -28,11 +29,31 @@ import {
 import { grainBudgetIds } from '../src/core/grainBudget';
 import { regionWidthForOutputWidth, safeRasterScale } from '../src/core/io/raster';
 import { exportMol, exportSmiles } from '../src/core/io/chemExport';
+import {
+  ImportError,
+  detectImportFormat,
+  documentImportToAppend,
+  documentImportToNewDocument,
+  documentImportToReplacement,
+  imageImportToAppend,
+  imageImportToNewDocument,
+  imageImportToReplacement,
+  validateImportContent
+} from '../src/core/io/importFile';
+import {
+  detectRasterKind,
+  imagePlacement,
+  validateRasterHeader,
+  type ImportedImageSource
+} from '../src/core/io/imageImport';
+import { serializeDocument } from '../src/core/io/serialize';
 import { documentToSvgString } from '../src/core/io/svg';
-import { rotateObject, scaleObject, translateObject } from '../src/core/scene';
+import { hitTestObject, rotateObject, scaleObject, translateObject } from '../src/core/scene';
 import { useAppStore } from '../src/store/useAppStore';
 import type {
+  EditorSnapshot,
   GroupObject,
+  ImageObject,
   LineObject,
   PathObject,
   RectObject,
@@ -976,4 +997,472 @@ test('对象图层：复制、删除与拖动层级（越靠后越在上层）',
     if (previousWindow === undefined) delete host.window;
     else host.window = previousWindow;
   }
+});
+
+function expectImportError(run: () => unknown, code: ImportError['code']): void {
+  assert.throws(run, (error: unknown) => {
+    assert.ok(error instanceof ImportError, '应抛出带错误码的 ImportError');
+    assert.equal(error.code, code);
+    assert.ok(error.message.length > 0, '错误信息不能为空');
+    return true;
+  });
+}
+
+function importSampleDocument(): VDrawDocument {
+  const doc = createDocument('blank-landscape', '导入测试');
+  const layer = doc.layers[0];
+  const rect = createRectObject(layer.id, DEFAULT_STYLE, 10, 20, 100, 60);
+  const path = createPathObject(
+    layer.id,
+    { ...DEFAULT_STYLE, stroke: { ...DEFAULT_STYLE.stroke, width: 3 } },
+    [makeNode(0, 0), makeNode(40, 40)],
+    false
+  );
+  return { ...doc, layers: [{ ...layer, objects: [rect, path] }] };
+}
+
+const IMPORT_EDITOR: EditorSnapshot = {
+  symmetry: 'vertical',
+  symmetryAxis: { x: 0.5, y: 0.4 },
+  guideMode: 'grid',
+  guideSettings: { horizon: 0.42, vpX: 0.5, vpLeft: -0.18, vpRight: 1.18, vpBottom: 1.75 },
+  guideAssist: true,
+  guideDensity: 24,
+  guideSpacing: 120
+};
+
+test('导入：.vdraw 完整还原页面、图层、样式与编辑器环境', () => {
+  const doc = importSampleDocument();
+  const source = validateImportContent({
+    fileName: '设计稿.vdraw',
+    content: serializeDocument(doc, IMPORT_EDITOR)
+  });
+  assert.equal(source.kind, 'document');
+  if (source.kind !== 'document') return;
+  assert.equal(source.stats.version, 1);
+  assert.equal(source.stats.layers, 1);
+  assert.equal(source.stats.objects, 2);
+  assert.equal(source.stats.pageWidth, doc.page.width);
+  assert.equal(source.stats.pageHeight, doc.page.height);
+  assert.equal(source.editor?.symmetry, 'vertical');
+  assert.equal(source.editor?.guideMode, 'grid');
+  assert.equal(source.suggestedName, '设计稿');
+  assert.deepEqual(source.warnings, []);
+  // 样式与贝塞尔几何原样保留，不做"重新猜测"。
+  assert.deepEqual(source.doc.layers[0].objects[0].style, doc.layers[0].objects[0].style);
+  const path = source.doc.layers[0].objects[1] as PathObject;
+  assert.equal(path.nodes.length, 2);
+  assert.equal(path.nodes[1].x, 40);
+});
+
+test('导入：旧版裸文档 JSON（无信封/无版本号）与 SVG 内容识别', () => {
+  const doc = importSampleDocument();
+  const envelope = JSON.parse(serializeDocument(doc)) as { document: VDrawDocument };
+  const source = validateImportContent({
+    fileName: '旧版.json',
+    content: JSON.stringify(envelope.document)
+  });
+  assert.equal(source.kind, 'document');
+  if (source.kind !== 'document') return;
+  assert.equal(source.stats.version, 1);
+  assert.equal(source.stats.objects, 2);
+  assert.equal(source.suggestedName, '旧版');
+  assert.equal(
+    detectImportFormat('图形.svg', '<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"/>'),
+    'svg'
+  );
+});
+
+test('导入：非 JSON、非工程 JSON 与高版本文件给出明确错误码', () => {
+  expectImportError(
+    () => validateImportContent({ fileName: '坏文件.vdraw', content: '{oops' }),
+    'invalid-json'
+  );
+  expectImportError(
+    () => validateImportContent({ fileName: '随机.json', content: '{"hello":1}' }),
+    'invalid-document'
+  );
+  const payload = JSON.parse(serializeDocument(importSampleDocument())) as Record<string, unknown>;
+  payload.schemaVersion = 99;
+  expectImportError(
+    () => validateImportContent({ fileName: '未来.vdraw', content: JSON.stringify(payload) }),
+    'unsupported-version'
+  );
+});
+
+test('导入：重复 ID、空路径节点与非法页面尺寸均被拒绝', () => {
+  const doc = importSampleDocument();
+  const layer = doc.layers[0];
+  const rect = layer.objects[0];
+  expectImportError(
+    () =>
+      validateImportContent({
+        fileName: '重复.vdraw',
+        content: serializeDocument({
+          ...doc,
+          layers: [{ ...layer, objects: [rect, { ...layer.objects[1], id: rect.id }] }]
+        })
+      }),
+    'duplicate-ids'
+  );
+
+  const emptyPath = {
+    ...createPathObject(layer.id, DEFAULT_STYLE, [makeNode(0, 0)], false),
+    nodes: []
+  };
+  expectImportError(
+    () =>
+      validateImportContent({
+        fileName: '空路径.vdraw',
+        content: serializeDocument({ ...doc, layers: [{ ...layer, objects: [emptyPath] }] })
+      }),
+    'invalid-layers'
+  );
+
+  expectImportError(
+    () =>
+      validateImportContent({
+        fileName: '超大.vdraw',
+        content: serializeDocument({ ...doc, page: { ...doc.page, width: 40000 } })
+      }),
+    'invalid-page'
+  );
+});
+
+test('导入：位图 / PDF / 二进制与未知扩展名给出可操作的提示', () => {
+  expectImportError(
+    () => validateImportContent({ fileName: '截图.png', content: 'not really png' }),
+    'unsupported-type'
+  );
+  expectImportError(
+    () => validateImportContent({ fileName: '导出.pdf', content: '%PDF-1.7 body' }),
+    'unsupported-type'
+  );
+  expectImportError(
+    () => validateImportContent({ fileName: '未知.bin', content: 'plain text' }),
+    'unsupported-type'
+  );
+  expectImportError(
+    () => validateImportContent({ fileName: '二进制.vdraw', content: '\u0000\u0001PNG' }),
+    'binary-content'
+  );
+  // 扩展名与内容不符：按内容给出更准确的解释，避免"JSON 解析失败"的误导。
+  expectImportError(
+    () =>
+      validateImportContent({
+        fileName: '伪装.vdraw',
+        content: '<svg xmlns="http://www.w3.org/2000/svg"><rect width="10" height="10"/></svg>'
+      }),
+    'unsupported-type'
+  );
+});
+
+test('导入：悬空引用与失效编组会自动修复并记录提示', () => {
+  const doc = importSampleDocument();
+  const layer = doc.layers[0];
+  const orphan = { ...layer.objects[0], parentId: 'missing-group' };
+  const group = createGroupObject(layer.id, '编组', { x: 0, y: 0, width: 40, height: 40 }, [
+    'missing-child'
+  ]);
+  const source = validateImportContent({
+    fileName: '损坏引用.vdraw',
+    content: serializeDocument({ ...doc, layers: [{ ...layer, objects: [orphan, group] }] })
+  });
+  assert.equal(source.kind, 'document');
+  if (source.kind !== 'document') return;
+  assert.equal(source.doc.layers[0].objects[0].parentId, null);
+  const repairedGroup = source.doc.layers[0].objects[1] as GroupObject;
+  assert.deepEqual(repairedGroup.childIds, []);
+  assert.ok(source.warnings.some((warning) => warning.includes('编组父级')));
+  assert.ok(source.warnings.some((warning) => warning.includes('编组子对象')));
+});
+
+test('导入：损坏样式下沉为默认值，非法路径节点直接拒绝', () => {
+  const doc = importSampleDocument();
+  const layer = doc.layers[0];
+  const brokenStyle = {
+    ...layer.objects[0],
+    style: { fill: { type: 'solid', color: 42 }, stroke: {}, opacity: 'x' }
+  } as unknown as SceneObject;
+  const source = validateImportContent({
+    fileName: '损坏样式.vdraw',
+    content: serializeDocument({ ...doc, layers: [{ ...layer, objects: [brokenStyle] }] })
+  });
+  assert.equal(source.kind, 'document');
+  if (source.kind !== 'document') return;
+  assert.ok(source.warnings.some((warning) => warning.includes('样式')));
+  const fixed = source.doc.layers[0].objects[0];
+  assert.equal(fixed.style.opacity, 1);
+  assert.equal(fixed.style.stroke.width, 1.5);
+  assert.deepEqual(fixed.style.fill, { type: 'none' });
+
+  const brokenPath = {
+    ...createPathObject(layer.id, DEFAULT_STYLE, [makeNode(0, 0)], false),
+    nodes: [{ id: 'n1', x: 'oops', y: 0, handleIn: null, handleOut: null, type: 'corner' }]
+  } as unknown as SceneObject;
+  expectImportError(
+    () =>
+      validateImportContent({
+        fileName: '坏节点.vdraw',
+        content: serializeDocument({ ...doc, layers: [{ ...layer, objects: [brokenPath] }] })
+      }),
+    'invalid-layers'
+  );
+});
+
+test('导入落点：新建使用新身份，覆盖保留当前文件身份，合并重映射 ID', () => {
+  const current = createDocument('blank-landscape', '当前画布');
+  const source = validateImportContent({
+    fileName: '素材.vdraw',
+    content: serializeDocument(importSampleDocument())
+  });
+  assert.equal(source.kind, 'document');
+  if (source.kind !== 'document') return;
+
+  const created = documentImportToNewDocument(source, '兜底名');
+  assert.notEqual(created.id, source.doc.id);
+  assert.equal(created.filePath, null);
+  assert.equal(created.name, '素材');
+
+  const replaced = documentImportToReplacement(current, source);
+  assert.equal(replaced.id, current.id);
+  assert.equal(replaced.name, current.name);
+  assert.equal(replaced.filePath, current.filePath);
+  assert.equal(replaced.layers.length, source.doc.layers.length);
+  assert.deepEqual(replaced.page, source.doc.page);
+  // 必须深拷贝：撤销快照不能与源数据共享引用。
+  assert.notEqual(replaced.layers, source.doc.layers);
+
+  const appended = documentImportToAppend(current, source);
+  assert.equal(appended.layersAdded, 1);
+  assert.equal(appended.objectsAdded, 2);
+  assert.equal(appended.doc.layers.length, 2);
+  const importedLayer = appended.doc.layers[1];
+  assert.notEqual(importedLayer.id, source.doc.layers[0].id);
+  const ids = appended.doc.layers.flatMap((layer) => layer.objects.map((object) => object.id));
+  assert.equal(new Set(ids).size, ids.length, '合并后对象 ID 必须唯一');
+  assert.equal(appended.doc.name, current.name);
+});
+
+const PNG_DATA_URL =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+function imageSource(overrides: Partial<ImportedImageSource> = {}): ImportedImageSource {
+  return {
+    kind: 'image',
+    format: 'png',
+    fileName: 'logo.png',
+    suggestedName: 'logo',
+    dataUrl: PNG_DATA_URL,
+    mime: 'image/png',
+    warnings: [],
+    stats: { width: 400, height: 200, bytes: 2048, format: 'png', mime: 'image/png' },
+    ...overrides
+  };
+}
+
+test('位图：按文件头识别格式，不信任扩展名', () => {
+  assert.equal(
+    detectRasterKind(Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])),
+    'png'
+  );
+  assert.equal(detectRasterKind(Uint8Array.from([0xff, 0xd8, 0xff, 0xe0])), 'jpeg');
+  assert.equal(detectRasterKind(Uint8Array.from([...'GIF89a'].map((c) => c.charCodeAt(0)))), 'gif');
+  assert.equal(
+    detectRasterKind(
+      Uint8Array.from([
+        ...'RIFF'.split('').map((c) => c.charCodeAt(0)),
+        0,
+        0,
+        0,
+        0,
+        ...'WEBP'.split('').map((c) => c.charCodeAt(0))
+      ])
+    ),
+    'webp'
+  );
+  assert.equal(
+    detectRasterKind(Uint8Array.from([...'BM'.split('').map((c) => c.charCodeAt(0)), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])),
+    'bmp'
+  );
+  assert.equal(detectRasterKind(Uint8Array.from([0x49, 0x49, 0x2a, 0x00])), 'tiff');
+  assert.equal(
+    detectRasterKind(
+      Uint8Array.from([
+        0,
+        0,
+        0,
+        0x20,
+        ...'ftyp'.split('').map((c) => c.charCodeAt(0)),
+        ...'avif'.split('').map((c) => c.charCodeAt(0))
+      ])
+    ),
+    'avif'
+  );
+  assert.equal(detectRasterKind(Uint8Array.from([1, 2, 3, 4, 5])), null);
+});
+
+test('位图：头校验区分正常 / 扩展名不符 / 损坏 / 暂不支持', () => {
+  const header = validateRasterHeader({
+    fileName: 'logo.png',
+    dataUrl: PNG_DATA_URL,
+    bytes: 4096
+  });
+  assert.equal(header.format, 'png');
+  assert.equal(header.mime, 'image/png');
+  assert.equal(header.bytes, 4096);
+  assert.equal(header.width, 1);
+  assert.equal(header.height, 1);
+  assert.deepEqual(header.warnings, []);
+
+  // 声明 20000×20000 的 PNG 只有文件头也必须提前拒绝，不能等解码把内存打满。
+  const hugeHeader = Buffer.from([
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52,
+    0, 0, 0x4e, 0x20, 0, 0, 0x4e, 0x20, 8, 8, 0, 0, 0, 0
+  ]).toString('base64');
+  expectImportError(
+    () =>
+      validateRasterHeader({
+        fileName: '巨图.png',
+        dataUrl: `data:image/png;base64,${hugeHeader}`
+      }),
+    'file-too-large'
+  );
+
+  const mismatch = validateRasterHeader({ fileName: 'logo.jpg', dataUrl: PNG_DATA_URL });
+  assert.ok(mismatch.warnings.some((warning) => warning.includes('不一致')));
+
+  expectImportError(
+    () =>
+      validateRasterHeader({
+        fileName: '损坏.png',
+        dataUrl: 'data:image/png;base64,aGVsbG8='
+      }),
+    'invalid-image'
+  );
+  expectImportError(
+    () =>
+      validateRasterHeader({
+        fileName: '扫描件.tiff',
+        dataUrl: 'data:image/tiff;base64,SUkqAA=='
+      }),
+    'unsupported-type'
+  );
+  expectImportError(
+    () => validateRasterHeader({ fileName: '空.png', dataUrl: 'data:image/png;base64,' }),
+    'empty-file'
+  );
+});
+
+test('位图：页面内放置优先原始尺寸，超出页面等比缩小并居中', () => {
+  const natural = imagePlacement(400, 200, 1000, 1000);
+  assert.equal(natural.scale, 1);
+  assert.equal(natural.width, 400);
+  assert.equal(natural.height, 200);
+  assert.equal(natural.x, 300);
+  assert.equal(natural.y, 400);
+
+  const fitted = imagePlacement(2000, 1000, 1000, 1000);
+  assert.equal(fitted.scale, 0.5);
+  assert.equal(fitted.width, 1000);
+  assert.equal(fitted.height, 500);
+  assert.equal(fitted.x, 0);
+  assert.equal(fitted.y, 250);
+});
+
+test('位图：新建画布按像素尺寸建页，对象可选中并进入 SVG 导出', () => {
+  const result = imageImportToNewDocument(imageSource(), '兜底');
+  assert.equal(result.doc.page.width, 400);
+  assert.equal(result.doc.page.height, 200);
+  assert.equal(result.doc.name, 'logo');
+  const image = result.objects[0] as ImageObject;
+  assert.equal(image.type, 'image');
+  assert.equal(image.width, 400);
+  assert.equal(image.height, 200);
+  assert.equal(image.naturalWidth, 400);
+  assert.equal(image.imageFormat, 'png');
+  assert.ok(hitTestObject(image, { x: 20, y: 20 }, 0));
+  assert.ok(!hitTestObject(image, { x: 500, y: 20 }, 0));
+
+  const svg = documentToSvgString(result.doc);
+  assert.ok(svg.includes('<image'));
+  assert.ok(svg.includes(PNG_DATA_URL));
+});
+
+test('位图：覆盖清空现有对象并居中，合并保留现有对象，锁定层拒绝写入', () => {
+  const current = createDocument('blank-landscape', '当前');
+  const layer = current.layers[0];
+  const rect = createRectObject(layer.id, DEFAULT_STYLE, 0, 0, 10, 10);
+  const withRect: VDrawDocument = {
+    ...current,
+    layers: [{ ...layer, objects: [rect] }]
+  };
+
+  const replaced = imageImportToReplacement(withRect, imageSource());
+  assert.equal(replaced.doc.layers[0].objects.length, 1);
+  const placed = replaced.objects[0] as ImageObject;
+  assert.equal(placed.width, 400);
+  assert.ok(Math.abs(placed.x - (current.page.width - 400) / 2) < 0.01);
+
+  const appended = imageImportToAppend(withRect, imageSource());
+  assert.equal(appended.doc.layers[0].objects.length, 2);
+  assert.equal(appended.objects.length, 1);
+
+  const locked: VDrawDocument = {
+    ...withRect,
+    layers: [{ ...layer, locked: true, objects: [rect] }]
+  };
+  expectImportError(() => imageImportToReplacement(locked, imageSource()), 'locked-layer');
+});
+
+test('位图：平移 / 缩放 / 旋转沿用通用变换', () => {
+  const image = createImageObject(
+    'layer',
+    PNG_DATA_URL,
+    400,
+    200,
+    { x: 10, y: 20, width: 200, height: 100 },
+    'logo',
+    'png'
+  );
+  const moved = translateObject(image, 5, -5);
+  assert.equal(moved.x, 15);
+  assert.equal(moved.y, 15);
+  const scaled = scaleObject(image, { x: 0, y: 0 }, 2, 0.5);
+  assert.equal(scaled.width, 400);
+  assert.equal(scaled.height, 50);
+  const rotated = rotateObject(image, { x: 110, y: 70 }, 90) as ImageObject;
+  assert.equal(rotated.rotation, 90);
+});
+
+test('位图：.vdraw 保存后可完整还原，外部链接图片被拒绝', () => {
+  const doc = imageImportToNewDocument(imageSource(), '兜底').doc;
+  const imported = validateImportContent({
+    fileName: '位图工程.vdraw',
+    content: serializeDocument(doc)
+  });
+  assert.equal(imported.kind, 'document');
+  if (imported.kind !== 'document') return;
+  const image = imported.doc.layers[0].objects[0] as ImageObject;
+  assert.equal(image.type, 'image');
+  assert.equal(image.src, PNG_DATA_URL);
+  assert.equal(image.naturalWidth, 400);
+
+  const external = {
+    ...doc,
+    layers: [
+      {
+        ...doc.layers[0],
+        objects: [{ ...image, src: 'https://example.com/logo.png' }]
+      }
+    ]
+  } as VDrawDocument;
+  expectImportError(
+    () =>
+      validateImportContent({
+        fileName: '外链.vdraw',
+        content: serializeDocument(external)
+      }),
+    'invalid-layers'
+  );
 });

@@ -7,6 +7,7 @@ import type {
   BondType,
   EllipseObject,
   GroupObject,
+  ImageObject,
   LineObject,
   PathNode,
   PathObject,
@@ -75,6 +76,39 @@ export function createRectObject(
     ...base('rect', '矩形', layerId, style, x, y, width, height),
     type: 'rect',
     cornerRadius: 0
+  };
+}
+
+/** 位图对象：src 必须是内嵌 data URL；样式只保留 opacity，描边/填充不参与渲染。 */
+export function createImageObject(
+  layerId: string,
+  src: string,
+  naturalWidth: number,
+  naturalHeight: number,
+  placement: { x: number; y: number; width: number; height: number },
+  name = '位图',
+  imageFormat?: ImageObject['imageFormat']
+): ImageObject {
+  return {
+    ...base(
+      'image',
+      name,
+      layerId,
+      {
+        fill: { type: 'none' },
+        stroke: { paint: { type: 'none' }, width: 0, cap: 'round', join: 'round', dash: [] },
+        opacity: 1
+      },
+      placement.x,
+      placement.y,
+      placement.width,
+      placement.height
+    ),
+    type: 'image',
+    src,
+    naturalWidth: Math.max(1, naturalWidth),
+    naturalHeight: Math.max(1, naturalHeight),
+    ...(imageFormat ? { imageFormat } : {})
   };
 }
 

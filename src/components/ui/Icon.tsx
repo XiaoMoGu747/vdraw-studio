@@ -350,6 +350,13 @@ function renderIcon(name: IconName): ReactNode {
           <path d="M4.4 19.2h15.2" />
         </>
       );
+    case 'upload':
+      return (
+        <>
+          <path d="M12 20.2V8.8M7.6 13.2L12 8.8l4.4 4.4" />
+          <path d="M4.4 4.8h15.2" />
+        </>
+      );
     case 'folder':
       return (
         <path d="M3.4 7.6a2 2 0 012-2h4l2 2.6h7.2a2 2 0 012 2v7.2a2 2 0 01-2 2H5.4a2 2 0 01-2-2z" />

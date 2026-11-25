@@ -16,6 +16,40 @@ let rendererReady = false;
 const { runSmokeFlow } = require('./smoke.cjs');
 
 const SAVE_FOLDER_NAME = 'VDraw保存';
+const RASTER_MAX_BYTES = 32 * 1024 * 1024;
+
+/** 只按文件头识别位图；扩展名错误时也能给出准确提示。 */
+function sniffRasterMime(buffer) {
+  if (buffer.length >= 8 && buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
+    return 'image/png';
+  }
+  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+    return 'image/jpeg';
+  }
+  const head6 = buffer.subarray(0, 6).toString('ascii');
+  if (head6 === 'GIF87a' || head6 === 'GIF89a') return 'image/gif';
+  if (
+    buffer.subarray(0, 4).toString('ascii') === 'RIFF' &&
+    buffer.subarray(8, 12).toString('ascii') === 'WEBP'
+  ) {
+    return 'image/webp';
+  }
+  if (buffer.subarray(0, 2).toString('ascii') === 'BM') return 'image/bmp';
+  // 能识别但暂不支持：返回 MIME，让渲染进程给出"TIFF/AVIF 不支持"的精确提示。
+  if (
+    (buffer[0] === 0x49 && buffer[1] === 0x49 && buffer[2] === 0x2a && buffer[3] === 0x00) ||
+    (buffer[0] === 0x4d && buffer[1] === 0x4d && buffer[2] === 0x00 && buffer[3] === 0x2a)
+  ) {
+    return 'image/tiff';
+  }
+  if (buffer.subarray(4, 8).toString('ascii') === 'ftyp') {
+    const brand = buffer.subarray(8, 12).toString('ascii');
+    if (['avif', 'avis', 'heic', 'heix', 'heif', 'mif1', 'msf1'].includes(brand)) {
+      return 'image/avif';
+    }
+  }
+  return null;
+}
 
 function safeFileStem(name) {
   return (
@@ -368,6 +402,71 @@ if (!gotLock) {
         if (printWindow && !printWindow.isDestroyed()) printWindow.destroy();
         await fs.promises.unlink(tempHtml).catch(() => {});
       }
+    });
+
+    // 统一导入入口：工程文件、JSON 与 SVG 共用同一个原生选择器。
+    // 读取后由渲染进程做结构校验，主进程只负责文件格式、大小与编码边界。
+    ipcMain.handle('file:pick-import', async () => {
+      let filePath = null;
+      if (isSmoke) {
+        for (const name of ['smoke-import.vdraw', 'smoke-import.svg', 'smoke-import.png']) {
+          const candidate = path.join(artifactsDir(), name);
+          if (fs.existsSync(candidate)) {
+            filePath = candidate;
+            break;
+          }
+        }
+        if (!filePath) return { canceled: true };
+      } else {
+        const result = await dialog.showOpenDialog(mainWindow, {
+          title: '导入文件',
+          properties: ['openFile'],
+          filters: [
+            {
+              name: 'VDraw 工程与图片',
+              extensions: ['vdraw', 'json', 'svg', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp']
+            },
+            { name: 'VDraw 工程', extensions: ['vdraw', 'json'] },
+            {
+              name: '矢量图与位图',
+              extensions: ['svg', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp']
+            }
+          ]
+        });
+        if (result.canceled || result.filePaths.length === 0) return { canceled: true };
+        filePath = result.filePaths[0];
+      }
+
+      const stat = await fs.promises.stat(filePath);
+      const limit = 64 * 1024 * 1024;
+      if (stat.size > limit) {
+        throw new Error(
+          `文件过大（${(stat.size / (1024 * 1024)).toFixed(1)} MB），单文件上限 64 MB`
+        );
+      }
+      const buffer = await fs.promises.readFile(filePath);
+      const mime = sniffRasterMime(buffer);
+      if (mime) {
+        if (buffer.length > RASTER_MAX_BYTES) {
+          throw new Error(
+            `位图过大（${(buffer.length / (1024 * 1024)).toFixed(1)} MB），单张位图上限 32 MB`
+          );
+        }
+        return {
+          canceled: false,
+          path: filePath,
+          name: path.basename(filePath),
+          dataUrl: `data:${mime};base64,${buffer.toString('base64')}`,
+          bytes: buffer.length
+        };
+      }
+      return {
+        canceled: false,
+        path: filePath,
+        name: path.basename(filePath),
+        content: buffer.toString('utf8'),
+        bytes: buffer.length
+      };
     });
 
     ipcMain.handle('file:import-svg', async () => {

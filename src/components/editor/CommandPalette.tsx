@@ -90,6 +90,13 @@ export function CommandPalette() {
         run: () => void fileActions.open()
       },
       {
+        id: 'import',
+        label: '导入文件…',
+        group: '文件',
+        keywords: 'import 导入 vdraw svg json png jpg webp gif bmp 位图 图片 恢复',
+        run: () => state().openImportPanel()
+      },
+      {
         id: 'export',
         label: '打开导出面板…',
         group: '文件',

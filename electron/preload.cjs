@@ -37,6 +37,7 @@ contextBridge.exposeInMainWorld('vdraw', {
     openSaveDir: () => ipcRenderer.invoke('file:open-save-dir'),
     exportFile: (payload) => ipcRenderer.invoke('file:export', payload),
     exportPdf: (payload) => ipcRenderer.invoke('file:export-pdf', payload),
+    pickImportFile: () => ipcRenderer.invoke('file:pick-import'),
     importSvg: () => ipcRenderer.invoke('file:import-svg')
   }
 });

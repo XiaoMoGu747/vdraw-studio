@@ -25,7 +25,8 @@ const TYPE_ICON: Record<string, IconName> = {
   ring: 'ring',
   group: 'layers',
   arrow: 'arrow',
-  annotation: 'info'
+  annotation: 'info',
+  image: 'image'
 };
 
 export function LayersPanel() {

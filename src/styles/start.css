@@ -708,6 +708,7 @@ html[data-theme='dark'] .start-page::before {
 /* 主轴统一为左对齐：标题、模板卡、最近文件都在同一竖线，两张主卡不再居中漂移。 */
 .launcher-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-start;
   gap: 16px;
 }

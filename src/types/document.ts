@@ -103,7 +103,8 @@ export type ObjectType =
   | 'atom'
   | 'ring'
   | 'arrow'
-  | 'annotation';
+  | 'annotation'
+  | 'image';
 
 export interface PathNode {
   id: ID;
@@ -329,6 +330,19 @@ export interface AnnotationObject extends SceneObjectBase {
   targetId: ID | null;
 }
 
+/**
+ * 位图对象：图像以 data URL 内嵌在文档里，随 .vdraw 保存/导出，
+ * 不依赖外部文件或网络。width/height 是页面显示尺寸，natural* 只作元数据。
+ */
+export interface ImageObject extends SceneObjectBase {
+  type: 'image';
+  src: string;
+  naturalWidth: number;
+  naturalHeight: number;
+  /** 原始格式（png/jpeg/webp/gif/bmp），仅用于属性面板提示。 */
+  imageFormat?: 'png' | 'jpeg' | 'webp' | 'gif' | 'bmp';
+}
+
 export type SceneObject =
   | RectObject
   | EllipseObject
@@ -341,7 +355,8 @@ export type SceneObject =
   | AtomObject
   | RingObject
   | ArrowObject
-  | AnnotationObject;
+  | AnnotationObject
+  | ImageObject;
 
 export type LayerBlendMode =
   | 'normal'

@@ -1,9 +1,8 @@
-import { TEMPLATE_MAP, drawLayer } from '../../core/document';
+import { TEMPLATE_MAP } from '../../core/document';
 import { downloadExportedFile, printSvgAsPdf } from '../../core/io/browserExport';
 import { documentToRasterBase64 } from '../../core/io/raster';
 import { baseName, parseDocumentFile, serializeDocument } from '../../core/io/serialize';
 import { documentToSvgString, resolveExportBox } from '../../core/io/svg';
-import { parseSvgToObjects } from '../../core/io/svgImport';
 import { useAppStore } from '../../store/useAppStore';
 import type { EditorSnapshot, ExportFormat, ExportRegion } from '../../types/document';
 
@@ -259,34 +258,5 @@ export function useFileActions() {
     }
   };
 
-  const importSvg = async (): Promise<void> => {
-    const api = bridge();
-    if (!api) return;
-    try {
-      const result = await api.file.importSvg();
-      if (result.canceled || !result.content) return;
-      const store = useAppStore.getState();
-      const targetLayer = drawLayer(store.doc);
-      if (!targetLayer) {
-        notify('没有可用的绘图层，请先解锁或新建图层', 'warn');
-        return;
-      }
-      const parsed = parseSvgToObjects(
-        result.content,
-        targetLayer.id,
-        store.doc.page.width,
-        store.doc.page.height
-      );
-      if (parsed.objects.length === 0) {
-        notify('SVG 中没有可导入的图元', 'warn');
-        return;
-      }
-      store.addObjects(parsed.objects, targetLayer.id);
-      notify(parsed.warning ?? `已导入 ${parsed.objects.length} 个图元`, parsed.warning ? 'info' : 'success');
-    } catch (error) {
-      notify(`导入失败：${error instanceof Error ? error.message : 'SVG 解析失败'}`, 'warn');
-    }
-  };
-
-  return { save, open, openPath, exportAs, importSvg, getSaveDir, openSaveDir };
+  return { save, open, openPath, exportAs, getSaveDir, openSaveDir };
 }

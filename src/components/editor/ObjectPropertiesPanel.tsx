@@ -269,7 +269,10 @@ export function ObjectPropertiesPanel() {
   // 若仍用 primary.rotation 作基准，重复输入会不断累加。
   const absoluteRotation =
     selection.length === 1 &&
-    (primary.type === 'rect' || primary.type === 'ellipse' || primary.type === 'text');
+    (primary.type === 'rect' ||
+      primary.type === 'ellipse' ||
+      primary.type === 'text' ||
+      primary.type === 'image');
   const primaryRotation = absoluteRotation ? primary.rotation ?? 0 : 0;
   const rotateSelection = (value: number) => {
     const state = useAppStore.getState();
@@ -468,6 +471,27 @@ export function ObjectPropertiesPanel() {
             </button>
           </div>
         </Section>
+
+        {primary.type === 'image' ? (
+          <Section title="位图" hint="图像内嵌在 .vdraw 中，随工程一起保存与导出">
+            <div className="field-row">
+              <span className="field-row__label">原始尺寸</span>
+              <span>
+                {primary.naturalWidth} × {primary.naturalHeight} px
+              </span>
+            </div>
+            <div className="field-row">
+              <span className="field-row__label">格式</span>
+              <span>{primary.imageFormat ? primary.imageFormat.toUpperCase() : '位图'}</span>
+            </div>
+            <div className="field-row">
+              <span className="field-row__label">显示尺寸</span>
+              <span>
+                {Math.round(primary.width)} × {Math.round(primary.height)} px
+              </span>
+            </div>
+          </Section>
+        ) : null}
 
         {hasVectorStyleTarget ? (
           <Section title="描边样式" hint="显示选中对象的实际线型；无选中时作为新图形默认值">

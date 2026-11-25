@@ -494,36 +494,60 @@ function parsePath(data: string): SubPath[] {
 export interface SvgImportResult {
   objects: SceneObject[];
   warning: string | null;
+  /** SVG 自带的画布尺寸（viewBox 宽高或 width/height 属性）。 */
+  width: number;
+  height: number;
+  /** 暂不支持、被跳过的元素数量。 */
+  skipped: number;
+}
+
+export interface SvgImportOptions {
+  /**
+   * contain（默认）：等比缩放进页面留白内并居中；
+   * none：保持 SVG 用户单位，只把 viewBox 原点平移到 0,0（用于「新建画布」）。
+   */
+  fit?: 'contain' | 'none';
+  /** contain 模式的页面留白。 */
+  margin?: number;
 }
 
 export function parseSvgToObjects(
   text: string,
   layerId: string,
   pageWidth: number,
-  pageHeight: number
+  pageHeight: number,
+  options: SvgImportOptions = {}
 ): SvgImportResult {
   const parser = new DOMParser();
   const xml = parser.parseFromString(text, 'image/svg+xml');
+  const errorNode = xml.querySelector('parsererror');
+  if (errorNode) throw new Error('SVG 解析失败：XML 结构不完整');
   const root = xml.documentElement;
   if (!root || root.nodeName.toLowerCase() !== 'svg') {
-    throw new Error('不是有效的 SVG 文件');
+    throw new Error('不是有效的 SVG 文件：根元素必须是 <svg>');
   }
-  const errorNode = xml.querySelector('parsererror');
-  if (errorNode) throw new Error('SVG 解析失败');
 
   const viewBox = (root.getAttribute('viewBox') ?? '').split(/[\s,]+/).map(Number);
-  const rootWidth = viewBox.length === 4 ? viewBox[2] : numberAttr(root, 'width', 800);
-  const rootHeight = viewBox.length === 4 ? viewBox[3] : numberAttr(root, 'height', 600);
-  const originX = viewBox.length === 4 ? viewBox[0] : 0;
-  const originY = viewBox.length === 4 ? viewBox[1] : 0;
-  const margin = 32;
-  const scale = Math.min(
-    1,
-    (pageWidth - margin * 2) / Math.max(1, rootWidth),
-    (pageHeight - margin * 2) / Math.max(1, rootHeight)
-  );
-  const offsetX = margin + (pageWidth - margin * 2 - rootWidth * scale) / 2 - originX * scale;
-  const offsetY = margin + (pageHeight - margin * 2 - rootHeight * scale) / 2 - originY * scale;
+  const hasViewBox = viewBox.length === 4 && viewBox.every((value) => Number.isFinite(value));
+  const rootWidth = hasViewBox && viewBox[2] > 0 ? viewBox[2] : numberAttr(root, 'width', 800);
+  const rootHeight = hasViewBox && viewBox[3] > 0 ? viewBox[3] : numberAttr(root, 'height', 600);
+  const originX = hasViewBox ? viewBox[0] : 0;
+  const originY = hasViewBox ? viewBox[1] : 0;
+  const fit = options.fit ?? 'contain';
+  const margin = options.margin ?? 32;
+  let scale = 1;
+  let offsetX = -originX;
+  let offsetY = -originY;
+  if (fit === 'contain') {
+    scale = Math.min(
+      1,
+      Math.max(1, pageWidth - margin * 2) / Math.max(1, rootWidth),
+      Math.max(1, pageHeight - margin * 2) / Math.max(1, rootHeight)
+    );
+    offsetX = margin + (Math.max(1, pageWidth - margin * 2) - rootWidth * scale) / 2 - originX * scale;
+    offsetY =
+      margin + (Math.max(1, pageHeight - margin * 2) - rootHeight * scale) / 2 - originY * scale;
+  }
   const rootMatrix: Matrix = { a: scale, b: 0, c: 0, d: scale, e: offsetX, f: offsetY };
 
   const objects: SceneObject[] = [];
@@ -676,6 +700,9 @@ export function parseSvgToObjects(
   return {
     objects,
     warning:
-      skipped > 0 ? `已导入 ${objects.length} 个图元，跳过 ${skipped} 个暂不支持的元素` : null
+      skipped > 0 ? `已导入 ${objects.length} 个图元，跳过 ${skipped} 个暂不支持的元素` : null,
+    width: rootWidth,
+    height: rootHeight,
+    skipped
   };
 }
