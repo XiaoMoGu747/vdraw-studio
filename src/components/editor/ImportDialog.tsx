@@ -4,6 +4,7 @@ import { drawLayer } from '../../core/document';
 import {
   IMPORT_FORMAT_GUIDE,
   MAX_IMPORT_BYTES,
+  MAX_IMPORT_FILES,
   MAX_RASTER_BYTES,
   formatFileSize,
   importErrorInfo,
@@ -21,6 +22,13 @@ import { useImportActions, type PickedImportFile } from './useImportActions';
 
 type Phase = 'idle' | 'reading' | 'ready' | 'applying';
 
+interface ImportEntry {
+  id: string;
+  name: string;
+  source?: ImportedSource;
+  error?: ImportErrorInfo;
+}
+
 interface ModeOption {
   id: ImportMode;
   label: string;
@@ -36,7 +44,40 @@ function formatSavedAt(value: string | null): string {
   return Number.isNaN(date.getTime()) ? '未记录' : date.toLocaleString('zh-CN');
 }
 
-/** 导入对话框：格式与来源说明、结构校验反馈、覆盖/新建/合并三种落点。 */
+function imageFormatLabel(format: string): string {
+  return format === 'webp' ? 'WebP' : format === 'jpeg' ? 'JPEG' : format.toUpperCase();
+}
+
+function sourceBadge(source: ImportedSource): string {
+  if (source.kind === 'document') return `VDraw v${source.stats.version}`;
+  if (source.kind === 'svg') return 'SVG';
+  return imageFormatLabel(source.stats.format);
+}
+
+function sourceMeta(source: ImportedSource): string {
+  if (source.kind === 'document') {
+    return `${source.stats.layers} 图层 · ${source.stats.objects} 对象`;
+  }
+  if (source.kind === 'svg') {
+    return `${Math.round(source.stats.width)} × ${Math.round(source.stats.height)} px · ${source.stats.elements} 图元`;
+  }
+  return `${source.stats.width} × ${source.stats.height} px · ${imageFormatLabel(source.stats.format)}`;
+}
+
+function ImportErrorCard({ error, testId }: { error: ImportErrorInfo; testId?: string }) {
+  return (
+    <div className="import-error" data-testid={testId} role="alert">
+      <Icon name="warning" size={16} />
+      <div className="import-error__body">
+        <strong>{error.title}</strong>
+        <span>{error.message}</span>
+        {error.hint ? <em>{error.hint}</em> : null}
+      </div>
+    </div>
+  );
+}
+
+/** 导入对话框：批量文件校验、格式说明、三种落点（覆盖 / 当前图层 / 新建图层）。 */
 export function ImportDialog() {
   const open = useAppStore((state) => state.importPanelOpen);
   const closeImportPanel = useAppStore((state) => state.closeImportPanel);
@@ -47,25 +88,40 @@ export function ImportDialog() {
   const actions = useImportActions();
 
   const [phase, setPhase] = useState<Phase>('idle');
-  const [fileName, setFileName] = useState('');
-  const [source, setSource] = useState<ImportedSource | null>(null);
+  const [entries, setEntries] = useState<ImportEntry[]>([]);
+  const [activeId, setActiveId] = useState<string | null>(null);
   const [error, setError] = useState<ImportErrorInfo | null>(null);
   const [mode, setMode] = useState<ImportMode>('replace');
   const [dragging, setDragging] = useState(false);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const dragDepth = useRef(0);
+  const readToken = useRef(0);
 
   const busy = phase === 'reading' || phase === 'applying';
   const hasCanvas = route === 'editor';
   const targetLayer = useMemo(() => drawLayer(doc), [doc]);
   const svgTargetReady = Boolean(targetLayer && !targetLayer.locked);
 
+  const sources = useMemo(
+    () => entries.flatMap((entry) => (entry.source ? [entry.source] : [])),
+    [entries]
+  );
+  const activeEntry =
+    entries.find((entry) => entry.id === activeId) ??
+    entries.find((entry) => entry.source) ??
+    entries[0];
+  const source = activeEntry?.source ?? null;
+  const failCount = entries.filter((entry) => entry.error).length;
+
   useEffect(() => {
     if (!open) return;
+    readToken.current += 1;
     setPhase('idle');
-    setFileName('');
-    setSource(null);
+    setEntries([]);
+    setActiveId(null);
     setError(null);
     setDragging(false);
+    setProgress(null);
     dragDepth.current = 0;
     setMode(useAppStore.getState().route === 'editor' ? 'replace' : 'new');
   }, [open]);
@@ -93,75 +149,191 @@ export function ImportDialog() {
 
   const close = () => {
     if (phase === 'applying') return;
+    readToken.current += 1;
     closeImportPanel();
   };
 
-  const applySource = (next: ImportedSource) => {
-    setSource(next);
-    setError(null);
-    setPhase('ready');
-    // 校验通过后按当前文档能力自动落回一个可用选项，避免停在灰色选项上。
-    const canReplace = hasCanvas && (next.kind === 'document' || svgTargetReady);
-    const canAppend =
-      hasCanvas && (next.kind === 'document' ? next.stats.objects > 0 : svgTargetReady);
-    if (mode === 'replace' && !canReplace) setMode(canAppend ? 'append' : 'new');
-    else if (mode === 'append' && !canAppend) setMode(canReplace ? 'replace' : 'new');
+  /** 依据当前文档能力计算四种落点；批量时覆盖/新建自动禁用。 */
+  const buildModes = (list: ImportedSource[]): ModeOption[] => {
+    const count = list.length;
+    const single = count === 1 ? list[0] : null;
+    const hasImportableContent = list.some((item) =>
+      item.kind === 'document' ? item.stats.objects > 0 : true
+    );
+    const appendReady = hasCanvas && Boolean(targetLayer) && !targetLayer?.locked;
+    return [
+      {
+        id: 'replace',
+        label: '覆盖当前画布',
+        icon: 'layers',
+        hint:
+          single?.kind === 'document'
+            ? `保留当前文件名与保存位置，整体替换页面（${single.stats.pageWidth} × ${single.stats.pageHeight} px）、图层与样式；可 Ctrl+Z 撤销。`
+            : single?.kind === 'image'
+              ? '清空画布现有对象，把位图按原始尺寸居中放入页面；超出页面也不缩放、不裁剪，可 Ctrl+Z 撤销。'
+              : '清空画布现有对象后放入 SVG 图元，保持原始尺寸并居中；可 Ctrl+Z 撤销。',
+        disabled:
+          !hasCanvas || count !== 1 || (single?.kind !== 'document' && !svgTargetReady),
+        disabledReason: !hasCanvas
+          ? '启动页没有正在编辑的文档'
+          : count !== 1
+            ? '批量导入请使用「导入到当前图层」或「导入到新建图层」'
+            : svgTargetReady
+              ? null
+              : targetLayer?.locked
+                ? `当前绘图层「${targetLayer.name}」已锁定，请先解锁`
+                : '当前没有可绘制图层，请先新建普通图层'
+      },
+      {
+        id: 'new',
+        label: '新建画布',
+        icon: 'plus',
+        hint:
+          single?.kind === 'svg'
+            ? `按 SVG 尺寸（${Math.round(single.stats.width)} × ${Math.round(single.stats.height)} px）新建文档，不修改当前画布内容。`
+            : single?.kind === 'image'
+              ? `按图片像素尺寸（${single.stats.width} × ${single.stats.height} px）新建文档，位图铺满页面；不修改当前画布内容。`
+              : '以文件的页面尺寸与图层新建文档，不关联原工程文件；当前画布会被切换（未保存时会先确认）。',
+        disabled: count !== 1,
+        disabledReason: count !== 1 ? '新建画布一次只能处理一个文件' : null
+      },
+      {
+        id: 'append',
+        label: '导入到当前图层',
+        icon: 'merge',
+        hint:
+          count > 1
+            ? `把 ${count} 个文件写入当前绘图层；工程文件会摊平图层并重映射 ID，保留现有对象。`
+            : single?.kind === 'document'
+              ? '把文件中的图形摊平写入当前绘图层，自动重映射图层与对象 ID，保留现有对象。'
+              : single?.kind === 'image'
+                ? '把位图按原始尺寸居中放入当前绘图层，超出页面也不缩放、不裁剪。'
+                : '把 SVG 图元按原始尺寸居中放进当前绘图层，保留现有对象与图层结构。',
+        disabled: !appendReady || !hasImportableContent,
+        disabledReason: !hasCanvas
+          ? '启动页没有正在编辑的文档'
+          : !targetLayer
+            ? '当前没有可绘制图层，请先新建普通图层'
+            : targetLayer.locked
+              ? `当前绘图层「${targetLayer.name}」已锁定，请先解锁`
+              : !hasImportableContent
+                ? '文件里没有可导入的对象'
+                : null
+      },
+      {
+        id: 'layer',
+        label: '导入到新建图层',
+        icon: 'layers',
+        hint:
+          count > 1
+            ? `每个文件新建一个图层（按文件名命名），整批只产生一次撤销记录，可整体移动或缩放。`
+            : '新建一个以文件名命名的图层，把内容放进去；不修改现有图层，可 Ctrl+Z 撤销。',
+        disabled: !hasCanvas || !hasImportableContent,
+        disabledReason: !hasCanvas
+          ? '启动页没有正在编辑的文档'
+          : !hasImportableContent
+            ? '文件里没有可导入的对象'
+            : null
+      }
+    ];
   };
 
-  /** 文本走结构校验，位图走"文件头 + 解码"校验；两者最终都落到同一个 ImportedSource。 */
-  const ingestPicked = async (picked: PickedImportFile) => {
-    if (picked.dataUrl) {
-      applySource(
-        await validateRasterImport({
-          fileName: picked.name,
-          dataUrl: picked.dataUrl,
-          bytes: picked.bytes
-        })
-      );
+  const modeOptions = buildModes(sources);
+  const currentMode = modeOptions.find((option) => option.id === mode);
+  const canApply = sources.length > 0 && phase === 'ready' && Boolean(currentMode && !currentMode.disabled);
+
+  const autoSelectMode = (list: ImportedSource[]) => {
+    const options = buildModes(list);
+    setMode((current) => {
+      const preferred =
+        list.length > 1
+          ? options.find((option) => option.id === 'layer' && !option.disabled)?.id
+          : options.find((option) => option.id === current && !option.disabled)?.id;
+      return preferred ?? options.find((option) => !option.disabled)?.id ?? 'new';
+    });
+  };
+
+  const ingestPicked = async (picked: PickedImportFile[]) => {
+    if (picked.length === 0) {
+      setPhase(entries.length > 0 ? 'ready' : 'idle');
       return;
     }
-    applySource(
-      validateImportContent({ fileName: picked.name, content: picked.content ?? '' })
-    );
+    const token = ++readToken.current;
+    setEntries([]);
+    setActiveId(null);
+    setError(null);
+    setProgress({ done: 0, total: picked.length });
+    setPhase('reading');
+
+    const next: ImportEntry[] = [];
+    for (let index = 0; index < picked.length; index += 1) {
+      if (token !== readToken.current) return;
+      const item = picked[index];
+      const id = `${index}-${item.name}`;
+      let entry: ImportEntry;
+      try {
+        if (item.error) {
+          entry = { id, name: item.name, error: item.error };
+        } else {
+          const parsed = item.dataUrl
+            ? await validateRasterImport({
+                fileName: item.name,
+                dataUrl: item.dataUrl,
+                bytes: item.bytes
+              })
+            : validateImportContent({
+                fileName: item.name,
+                content: item.content ?? ''
+              });
+          entry = { id, name: item.name, source: parsed };
+        }
+      } catch (caught) {
+        entry = { id, name: item.name, error: importErrorInfo(caught) };
+      }
+      next.push(entry);
+      if (token !== readToken.current) return;
+      setEntries([...next]);
+      setActiveId((current) => current ?? (entry.source ? entry.id : current));
+      setProgress({ done: index + 1, total: picked.length });
+      // 让浏览器绘制进度后再继续解析下一个文件。
+      await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+    }
+    if (token !== readToken.current) return;
+
+    setPhase('ready');
+    setProgress(null);
+    const firstOk = next.find((entry) => entry.source);
+    setActiveId(firstOk?.id ?? next[0]?.id ?? null);
+    autoSelectMode(next.flatMap((entry) => (entry.source ? [entry.source] : [])));
   };
 
   const choose = async () => {
     if (busy) return;
-    setSource(null);
     setError(null);
-    setFileName('');
     setPhase('reading');
     try {
-      const picked = await actions.pickImportFile();
-      if (!picked) {
-        setPhase('idle');
+      const picked = await actions.pickImportFiles();
+      if (picked.length === 0) {
+        setPhase(entries.length > 0 ? 'ready' : 'idle');
         return;
       }
-      setFileName(picked.name);
-      // 先让浏览器绘制"正在读取"，再执行可能较重的解析/解码。
-      await new Promise<void>((resolve) => window.setTimeout(resolve, 16));
       await ingestPicked(picked);
     } catch (caught) {
-      setSource(null);
       setError(importErrorInfo(caught));
-      setPhase('idle');
+      setPhase(entries.length > 0 ? 'ready' : 'idle');
     }
   };
 
-  const ingestDroppedFile = async (file: File) => {
-    if (busy) return;
-    setSource(null);
+  const ingestDroppedFiles = async (files: File[]) => {
+    if (busy || files.length === 0) return;
     setError(null);
-    setFileName(file.name);
     setPhase('reading');
     try {
-      const picked = await actions.readDroppedFile(file);
-      setFileName(picked.name);
+      const picked = await actions.readDroppedFiles(files);
       await ingestPicked(picked);
     } catch (caught) {
-      setSource(null);
       setError(importErrorInfo(caught));
-      setPhase('idle');
+      setPhase(entries.length > 0 ? 'ready' : 'idle');
     }
   };
 
@@ -183,16 +355,16 @@ export function ImportDialog() {
     dragDepth.current = 0;
     setDragging(false);
     if (busy) return;
-    const file = event.dataTransfer.files?.[0];
-    if (file) void ingestDroppedFile(file);
+    const files = Array.from(event.dataTransfer.files ?? []);
+    if (files.length > 0) void ingestDroppedFiles(files);
   };
 
   const confirm = async () => {
-    if (!source || phase !== 'ready') return;
+    if (!canApply) return;
     setPhase('applying');
     setError(null);
     try {
-      const applied = await actions.applyImport(source, mode);
+      const applied = await actions.applyImport(sources, mode);
       if (applied) closeImportPanel();
       else setPhase('ready');
     } catch (caught) {
@@ -201,89 +373,40 @@ export function ImportDialog() {
     }
   };
 
-  const svgHint = !hasCanvas
-    ? '启动页没有正在编辑的文档；本次导入将直接新建画布。'
-    : !targetLayer
-      ? '当前没有可绘制图层，请先新建普通图层后再导入。'
-      : targetLayer.locked
-        ? `当前绘图层「${targetLayer.name}」已锁定，请先解锁。`
-        : null;
-
-  // 矢量图与位图都要落到当前绘图层；工程文件自带完整图层结构。
-  const needsDrawLayer = source?.kind === 'svg' || source?.kind === 'image';
-
-  const modeOptions: ModeOption[] = [
-    {
-      id: 'replace',
-      label: '覆盖当前画布',
-      icon: 'layers',
-      hint:
-        source?.kind === 'document'
-          ? `保留当前文件名与保存位置，用文件内容整体替换页面（${source.stats.pageWidth} × ${source.stats.pageHeight} px）、图层与样式；可 Ctrl+Z 撤销。`
-          : source?.kind === 'image'
-            ? '清空画布现有对象，把位图按原始尺寸居中放入页面（超出页面时等比缩小）；可 Ctrl+Z 撤销。'
-            : '清空画布现有对象后放入 SVG 图元，按页面等比缩放并居中；可 Ctrl+Z 撤销。',
-      disabled: !hasCanvas || (needsDrawLayer && !svgTargetReady),
-      disabledReason: !hasCanvas ? '启动页没有正在编辑的文档' : svgHint
-    },
-    {
-      id: 'new',
-      label: '新建画布',
-      icon: 'plus',
-      hint:
-        source?.kind === 'svg'
-          ? `按 SVG 尺寸（${Math.round(source.stats.width)} × ${Math.round(source.stats.height)} px）新建文档，不修改当前画布内容。`
-          : source?.kind === 'image'
-            ? `按图片像素尺寸（${source.stats.width} × ${source.stats.height} px）新建文档，位图铺满页面；不修改当前画布内容。`
-            : '以文件的页面尺寸与图层新建文档，不关联原工程文件；当前画布会被切换（未保存时会先确认）。',
-      disabled: false,
-      disabledReason: null
-    },
-    {
-      id: 'append',
-      label: '合并到当前画布',
-      icon: 'merge',
-      hint:
-        source?.kind === 'document'
-          ? '把文件中的图层追加到当前文档，自动重映射图层与对象 ID，避免引用冲突。'
-          : source?.kind === 'image'
-            ? '把位图作为对象追加到当前绘图层，保留现有对象与图层结构。'
-            : '把图元追加到当前绘图层，保留现有对象与图层结构。',
-      disabled:
-        !hasCanvas ||
-        (source?.kind === 'document'
-          ? source.stats.objects === 0
-          : !svgTargetReady),
-      disabledReason: !hasCanvas
-        ? '启动页没有正在编辑的文档'
-        : source?.kind === 'document' && source.stats.objects === 0
-          ? '文件里没有可合并的对象'
-          : svgHint
-    }
-  ];
-
   const saved = source?.kind === 'document' ? formatSavedAt(source.stats.savedAt) : null;
+  const showBatch = entries.length > 1;
+  const fileLabel =
+    entries.length > 1 ? `${entries.length} 个文件` : entries[0]?.name ?? '';
 
   return (
     <Modal
       title="导入文件"
-      subtitle="从本机文件恢复图形、样式、图层，或放入位图 · 数据只在本机读取"
+      subtitle="从本机文件恢复图形、样式、图层，或放入位图 · 支持一次选择多个文件"
       className="modal--import"
       onClose={close}
       footer={
         <>
-          <button type="button" className="btn btn--outline btn--sm" disabled={phase === 'applying'} onClick={close}>
+          <button
+            type="button"
+            className="btn btn--outline btn--sm"
+            disabled={phase === 'applying'}
+            onClick={close}
+          >
             取消
           </button>
           <button
             type="button"
             className="btn btn--primary btn--sm"
             data-testid="import-confirm"
-            disabled={!source || phase !== 'ready'}
+            disabled={!canApply}
             onClick={() => void confirm()}
           >
             <Icon name="upload" size={14} />
-            {phase === 'applying' ? '导入中…' : '导入'}
+            {phase === 'applying'
+              ? '导入中…'
+              : sources.length > 1
+                ? `导入 ${sources.length} 个文件`
+                : '导入'}
           </button>
         </>
       }
@@ -327,15 +450,15 @@ export function ImportDialog() {
             <Icon name="upload" size={18} />
           </span>
           <span className="import-drop__body">
-            <strong>{fileName || '拖入文件，或选择本地文件'}</strong>
+            <strong>{fileLabel || '拖入文件，或选择本地文件'}</strong>
             <span>
-              {fileName
-                ? phase === 'reading'
-                  ? '正在读取并校验…'
-                  : error
-                    ? '读取或校验失败，可重新选择文件'
-                    : '已通过校验，可重新选择其他文件'
-                : `.vdraw / .json / .svg / 位图 · 文本上限 ${formatFileSize(MAX_IMPORT_BYTES)} · 位图上限 ${formatFileSize(MAX_RASTER_BYTES)}`}
+              {phase === 'reading'
+                ? progress
+                  ? `正在读取并校验 ${progress.done}/${progress.total}…`
+                  : '正在读取文件…'
+                : entries.length > 0
+                  ? `${sources.length} 个可导入${failCount > 0 ? ` · ${failCount} 个失败` : ''} · 可重新选择`
+                  : `.vdraw / .json / .svg / 位图 · 一次最多 ${MAX_IMPORT_FILES} 个 · 文本 ${formatFileSize(MAX_IMPORT_BYTES)} / 位图 ${formatFileSize(MAX_RASTER_BYTES)}`}
             </span>
           </span>
           <button
@@ -346,41 +469,91 @@ export function ImportDialog() {
             onClick={() => void choose()}
           >
             <Icon name="folder" size={14} />
-            {fileName ? '更换文件' : '选择文件'}
+            {entries.length > 0 ? '重新选择' : '选择文件'}
           </button>
         </div>
 
         {phase === 'reading' ? (
           <div className="import-status" data-testid="import-loading" role="status">
             <span className="import-spin" aria-hidden="true" />
-            正在读取、解析并校验文件…
+            {progress
+              ? `正在读取并校验 ${progress.done}/${progress.total}…`
+              : '正在读取、解析并校验文件…'}
           </div>
         ) : null}
 
-        {error ? (
-          <div className="import-error" data-testid="import-error" role="alert">
-            <Icon name="warning" size={16} />
-            <div className="import-error__body">
-              <strong>{error.title}</strong>
-              <span>{error.message}</span>
-              {error.hint ? <em>{error.hint}</em> : null}
+        {error ? <ImportErrorCard error={error} testId="import-error" /> : null}
+
+        {!hasCanvas && sources.length > 1 ? (
+          <div className="import-status" data-testid="import-batch-hint" role="status">
+            <Icon name="info" size={14} />
+            启动页一次只能导入一个文件；请先新建或打开画布后再批量导入。
+          </div>
+        ) : null}
+
+        {entries.length === 1 && entries[0].error ? (
+          <ImportErrorCard error={entries[0].error} testId="import-error" />
+        ) : null}
+
+        {showBatch ? (
+          <section className="import-batch" data-testid="import-batch" aria-label="已选择的文件">
+            <div className="import-batch__head">
+              <strong>已选择 {entries.length} 个文件</strong>
+              <span>
+                {sources.length} 个可导入
+                {failCount > 0 ? ` · ${failCount} 个失败` : ''}
+              </span>
             </div>
-          </div>
+            <ul className="import-batch__list">
+              {entries.map((entry) => {
+                const active = entry.id === activeEntry?.id;
+                return (
+                  <li
+                    key={entry.id}
+                    className={`import-batch__item${active ? ' is-active' : ''}`}
+                    data-ok={entry.source ? 'true' : 'false'}
+                    data-testid="import-batch-row"
+                  >
+                    <button
+                      type="button"
+                      className="import-batch__button"
+                      aria-pressed={active}
+                      title={entry.name}
+                      onClick={() => setActiveId(entry.id)}
+                    >
+                      <span
+                        className={`import-badge${entry.error ? ' import-badge--error' : ''}`}
+                      >
+                        {entry.source ? sourceBadge(entry.source) : '失败'}
+                      </span>
+                      <span className="import-batch__name">{entry.name}</span>
+                      <span className="import-batch__meta">
+                        {entry.source ? sourceMeta(entry.source) : '无法导入'}
+                      </span>
+                      <Icon name={entry.source ? 'check' : 'warning'} size={14} />
+                    </button>
+                    {entry.error ? (
+                      <div
+                        className="import-batch__error"
+                        role="alert"
+                        title={entry.error.hint ?? entry.error.message}
+                      >
+                        <strong>{entry.error.title}</strong>
+                        <span>{entry.error.message}</span>
+                      </div>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
         ) : null}
 
-        {source ? (
+        {source && entries.length === 1 ? (
           <>
             <section className="import-summary" data-testid="import-summary">
               <header className="import-summary__head">
-                <span className="import-badge">
-                  {source.kind === 'document'
-                    ? `VDraw v${source.stats.version}`
-                    : source.kind === 'svg'
-                      ? 'SVG'
-                      : source.stats.format === 'webp'
-                        ? 'WebP'
-                        : source.stats.format.toUpperCase()}
-                </span>
+                <span className="import-badge">{sourceBadge(source)}</span>
                 <strong title={source.fileName}>{source.fileName}</strong>
               </header>
               <dl>
@@ -434,7 +607,7 @@ export function ImportDialog() {
                     </div>
                     <div>
                       <dt>位图格式</dt>
-                      <dd>{source.stats.format.toUpperCase()}</dd>
+                      <dd>{imageFormatLabel(source.stats.format)}</dd>
                     </div>
                   </>
                 )}
@@ -447,11 +620,20 @@ export function ImportDialog() {
                 </ul>
               ) : null}
             </section>
+          </>
+        ) : null}
 
+        {sources.length > 0 ? (
             <section className="import-modes" aria-label="导入方式">
               <div className="import-modes__head">
                 <strong>导入方式</strong>
-                <span>{hasCanvas ? '覆盖/合并均可撤销' : '启动页导入将新建画布'}</span>
+                <span>
+                  {hasCanvas
+                    ? sources.length > 1
+                      ? '整批一次写入，可 Ctrl+Z 撤销'
+                      : '覆盖/导入均可撤销'
+                    : '启动页一次只能导入一个文件'}
+                </span>
               </div>
               {modeOptions.map((option) => {
                 const active = mode === option.id;
@@ -481,7 +663,6 @@ export function ImportDialog() {
                 );
               })}
             </section>
-          </>
         ) : null}
       </div>
     </Modal>

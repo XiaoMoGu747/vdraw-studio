@@ -5343,6 +5343,151 @@ async function runSmokeFlow(win, smokeErrors) {
   }
   console.log('IMAGE_IMPORT ' + JSON.stringify(imageImport));
 
+  // ---- 批量导入：两张位图一次写入「新建图层」，其中一张宽于页面，验证不缩放 ----
+  const widePngBase64 =
+    'iVBORw0KGgoAAAANSUhEUgAABLAAAABQCAYAAAAJKoxeAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAJOSURBVHhe7dghAQAwDMCwmZt/djs/v4KCgJBK6JzdCwAAAABV8wcAAAAAKDGwAAAAAEgzsAAAAABIM7AAAAAASDOwAAAAAEgzsAAAAABIM7AAAAAASDOwAAAAAEgzsAAAAABIM7AAAAAASDOwAAAAAEgzsAAAAABIM7AAAAAASDOwAAAAAEgzsAAAAABIM7AAAAAASDOwAAAAAEgzsAAAAABIM7AAAAAASDOwAAAAAEgzsAAAAABIM7AAAAAASDOwAAAAAEgzsAAAAABIM7AAAAAASDOwAAAAAEgzsAAAAABIM7AAAAAASDOwAAAAAEgzsAAAAABIM7AAAAAASDOwAAAAAEgzsAAAAABIM7AAAAAASDOwAAAAAEgzsAAAAABIM7AAAAAASDOwAAAAAEgzsAAAAABIM7AAAAAASDOwAAAAAEgzsAAAAABIM7AAAAAASDOwAAAAAEgzsAAAAABIM7AAAAAASDOwAAAAAEgzsAAAAABIM7AAAAAASDOwAAAAAEgzsAAAAABIM7AAAAAASDOwAAAAAEgzsAAAAABIM7AAAAAASDOwAAAAAEgzsAAAAABIM7AAAAAASDOwAAAAAEgzsAAAAABIM7AAAAAASDOwAAAAAEgzsAAAAABIM7AAAAAASDOwAAAAAEgzsAAAAABIM7AAAAAASDOwAAAAAEgzsAAAAABIM7AAAAAASDOwAAAAAEgzsAAAAABIM7AAAAAASDOwAAAAAEgzsAAAAABIM7AAAAAASDOwAAAAAEgzsAAAAABIM7AAAAAASDOwAAAAAEgzsAAAAABIM7AAAAAASDOwAAAAAEgzsAAAAABIM7AAAAAASDOwAAAAAEgzsAAAAABIM7AAAAAASDOwAAAAAEgzsAAAAABIM7AAAAAASDOwAAAAAEgzsAAAAABIM7AAAAAASHurFV0YgQ8zFQAAAABJRU5ErkJggg==';
+  const batchPngA = path.join(outDir, 'smoke-import.png');
+  const batchPngB = path.join(outDir, 'smoke-import-2.png');
+  const batchBadPng = path.join(outDir, 'smoke-import-bad.png');
+  const batchSvgHold = `${imageSvgPath}.batch-hold`;
+  fs.writeFileSync(batchPngA, Buffer.from(pngBase64, 'base64'));
+  fs.writeFileSync(batchPngB, Buffer.from(widePngBase64, 'base64'));
+  fs.writeFileSync(batchBadPng, 'this is not a real png', 'utf8');
+  let batchSvgHeld = false;
+  if (fs.existsSync(imageSvgPath)) {
+    fs.renameSync(imageSvgPath, batchSvgHold);
+    batchSvgHeld = true;
+  }
+  let batchImport = { ok: false };
+  try {
+    const beforeObjects = await countObjects();
+    const beforeLayers = await readDom(
+      win,
+      `document.querySelectorAll('[data-layer-row]').length`
+    );
+    await readDom(
+      win,
+      `[...document.querySelectorAll('.menubar__trigger')].find((el) => el.textContent === '文件').click()`
+    );
+    await sleep(180);
+    await readDom(
+      win,
+      `(() => {
+        const item = [...document.querySelectorAll('.menu-dropdown .menu-item')].find((el) => (el.textContent || '').includes('导入文件'));
+        if (item) item.click();
+        return Boolean(item);
+      })()`
+    );
+    await sleep(280);
+    await readDom(
+      win,
+      `(() => {
+        const button = document.querySelector('[data-testid="import-choose"]');
+        if (button) button.click();
+        return Boolean(button);
+      })()`
+    );
+    await sleep(1200);
+    const batchState = await readDom(
+      win,
+      `(() => {
+        const rows = [...document.querySelectorAll('[data-testid="import-batch-row"]')];
+        const layerMode = document.querySelector('[data-testid="import-mode-layer"]');
+        return {
+          dialog: Boolean(document.querySelector('[data-testid="import-dialog"]')),
+          rows: rows.length,
+          okRows: rows.filter((row) => row.getAttribute('data-ok') === 'true').length,
+          badRows: rows.filter((row) => row.getAttribute('data-ok') === 'false').length,
+          badMessage:
+            document.querySelector('.import-batch__item[data-ok="false"] .import-batch__error')
+              ?.textContent || null,
+          layerActive: layerMode?.classList.contains('is-active') ?? false,
+          activeMode:
+            document.querySelector('.import-mode.is-active')?.getAttribute('data-testid') ?? null,
+          layerDisabled: layerMode?.disabled ?? null,
+          appendDisabled:
+            document.querySelector('[data-testid="import-mode-append"]')?.disabled ?? null,
+          error: document.querySelector('[data-testid="import-error"]')?.textContent || null
+        };
+      })()`
+    );
+    await screenshot('smoke-import-batch-dialog.png');
+    await readDom(win, `document.querySelector('[data-testid="import-mode-layer"]')?.click()`);
+    await sleep(140);
+    await readDom(win, `document.querySelector('[data-testid="import-confirm"]')?.click()`);
+    await sleep(1200);
+    await readDom(win, `document.querySelector('[data-tool="select"]')?.click()`);
+    await sleep(250);
+    const afterObjects = await countObjects();
+    const afterLayers = await readDom(
+      win,
+      `document.querySelectorAll('[data-layer-row]').length`
+    );
+    const batchGeometry = await readDom(
+      win,
+      `(() => {
+        const images = [...document.querySelectorAll('svg image')].map((node) => ({
+          w: Number(node.getAttribute('width')),
+          h: Number(node.getAttribute('height')),
+          x: Number(node.getAttribute('x'))
+        }));
+        const layerNames = [...document.querySelectorAll('[data-layer-row] .layer-row__name')].map(
+          (node) => node.textContent || ''
+        );
+        return {
+          images,
+          hasNatural: images.some((item) => item.w === 240 && item.h === 120),
+          hasWide: images.some((item) => item.w === 1200 && item.h === 80 && item.x < 0),
+          layerNames,
+          handles: document.querySelectorAll('.selection-overlay rect').length,
+          dialogClosed: !document.querySelector('[data-testid="import-dialog"]')
+        };
+      })()`
+    );
+    batchImport = {
+      ok:
+        batchState.dialog &&
+        batchState.rows === 3 &&
+        batchState.okRows === 2 &&
+        batchState.badRows === 1 &&
+        Boolean(batchState.badMessage) &&
+        !batchState.error &&
+        batchState.layerActive &&
+        afterObjects === beforeObjects + 2 &&
+        afterLayers === beforeLayers + 2 &&
+        batchGeometry.hasNatural &&
+        batchGeometry.hasWide &&
+        batchGeometry.layerNames.includes('smoke-import') &&
+        batchGeometry.layerNames.includes('smoke-import-2') &&
+        batchGeometry.handles >= 9 &&
+        batchGeometry.dialogClosed,
+      rows: batchState.rows,
+      okRows: batchState.okRows,
+      badRows: batchState.badRows,
+      badMessage: batchState.badMessage,
+      error: batchState.error,
+      layerActive: batchState.layerActive,
+      activeMode: batchState.activeMode,
+      layerDisabled: batchState.layerDisabled,
+      appendDisabled: batchState.appendDisabled,
+      addedObjects: afterObjects - beforeObjects,
+      addedLayers: afterLayers - beforeLayers,
+      hasNaturalImage: batchGeometry.hasNatural,
+      hasWideImage: batchGeometry.hasWide,
+      layerNames: batchGeometry.layerNames,
+      handles: batchGeometry.handles,
+      dialogClosed: batchGeometry.dialogClosed
+    };
+  } catch (error) {
+    batchImport = { ok: false, error: error instanceof Error ? error.message : String(error) };
+  } finally {
+    fs.rmSync(batchPngA, { force: true });
+    fs.rmSync(batchPngB, { force: true });
+    fs.rmSync(batchBadPng, { force: true });
+    if (batchSvgHeld && fs.existsSync(batchSvgHold)) fs.renameSync(batchSvgHold, imageSvgPath);
+  }
+  console.log('BATCH_IMPORT ' + JSON.stringify(batchImport));
+
   const failed =
     alphaClip.defs <= 0 ||
     alphaClip.refs <= 0 ||
@@ -5904,6 +6049,7 @@ async function runSmokeFlow(win, smokeErrors) {
     !brushLibrary.multiplyActive ||
     scenarioFailures.length > 0 ||
     !imageImport.ok ||
+    !batchImport.ok ||
     smokeErrors.length > 0;
 
   if (failed) {

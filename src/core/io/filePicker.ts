@@ -18,33 +18,35 @@ export interface PickedBrowserFile {
 /**
  * 网页端文件选择：创建一个临时 input[type=file]，复用浏览器原生选择器。
  * 桌面端不走这里（走主进程的原生对话框），但拖拽与网页端共用同一套校验。
+ * 支持一次选择多个文件；取消时返回空数组。
  */
-export function pickBrowserFile(accept: string): Promise<File | null> {
+export function pickBrowserFiles(accept: string): Promise<File[]> {
   return new Promise((resolve) => {
     const input = document.createElement('input');
     input.type = 'file';
+    input.multiple = true;
     input.accept = accept;
     input.style.position = 'fixed';
     input.style.left = '-9999px';
     input.setAttribute('aria-hidden', 'true');
 
     let settled = false;
-    const finish = (file: File | null) => {
+    const finish = (files: File[]) => {
       if (settled) return;
       settled = true;
       window.removeEventListener('focus', onFocus);
       input.remove();
-      resolve(file);
+      resolve(files);
     };
     // 用户点「取消」时部分浏览器不派发 change：窗口重新获得焦点后兜底判定。
     const onFocus = () => {
       window.setTimeout(() => {
-        if (!settled && (!input.files || input.files.length === 0)) finish(null);
+        if (!settled && (!input.files || input.files.length === 0)) finish([]);
       }, 400);
     };
 
-    input.addEventListener('change', () => finish(input.files?.[0] ?? null));
-    input.oncancel = () => finish(null);
+    input.addEventListener('change', () => finish(Array.from(input.files ?? [])));
+    input.oncancel = () => finish([]);
     window.addEventListener('focus', onFocus);
     document.body.appendChild(input);
     input.click();

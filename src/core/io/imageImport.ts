@@ -423,28 +423,32 @@ export interface ImagePlacement {
   y: number;
   width: number;
   height: number;
-  /** 为放入页面而缩小的比例；1 表示原始尺寸。 */
+  /** 保持原始尺寸时为 1；保留字段兼容旧调用方。 */
   scale: number;
+  /** 图片原始尺寸超出页面：画布仍完整渲染，只提示用户可手动缩放。 */
+  exceedsPage: boolean;
 }
 
-/** 页面内放置：优先原始尺寸；超出页面时等比缩小并居中。 */
+/**
+ * 页面内放置：**始终保持原始像素尺寸**并居中。
+ * 超出页面时只给出提示，不缩小、不裁剪；用户可随后拖动或缩放。
+ */
 export function imagePlacement(
   naturalWidth: number,
   naturalHeight: number,
   pageWidth: number,
-  pageHeight: number
+  pageHeight: number,
+  offset: { x: number; y: number } = { x: 0, y: 0 }
 ): ImagePlacement {
-  const safeWidth = Math.max(1, naturalWidth);
-  const safeHeight = Math.max(1, naturalHeight);
-  const scale = Math.min(1, pageWidth / safeWidth, pageHeight / safeHeight);
-  const width = Math.max(1, safeWidth * scale);
-  const height = Math.max(1, safeHeight * scale);
+  const width = Math.max(1, naturalWidth);
+  const height = Math.max(1, naturalHeight);
   return {
-    x: (pageWidth - width) / 2,
-    y: (pageHeight - height) / 2,
+    x: (pageWidth - width) / 2 + offset.x,
+    y: (pageHeight - height) / 2 + offset.y,
     width,
     height,
-    scale
+    scale: 1,
+    exceedsPage: width > pageWidth || height > pageHeight
   };
 }
 

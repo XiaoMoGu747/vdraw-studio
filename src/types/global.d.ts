@@ -1,15 +1,27 @@
 export {};
 
 declare global {
-  interface VDrawFileResult {
-    canceled: boolean;
+  interface VDrawImportEntry {
+    name: string;
     path?: string;
-    name?: string;
     /** 文本格式内容（.vdraw / .json / .svg）。 */
     content?: string;
     /** 位图 data URL（PNG / JPEG / WebP / GIF / BMP）。 */
     dataUrl?: string;
     /** 原始文件字节数。 */
+    bytes?: number;
+    /** 单文件读取失败原因；该条目仍会返回，由渲染进程逐条提示。 */
+    error?: string;
+  }
+
+  interface VDrawFileResult {
+    canceled: boolean;
+    /** 批量导入结果：每个文件一条，失败项带 error。 */
+    files?: VDrawImportEntry[];
+    path?: string;
+    name?: string;
+    content?: string;
+    dataUrl?: string;
     bytes?: number;
     directory?: string;
     fallback?: boolean;
@@ -69,8 +81,8 @@ declare global {
         width: number;
         height: number;
       }) => Promise<VDrawFileResult>;
-      /** 统一导入：原生对话框选择 .vdraw / .json / .svg 并返回文本内容。 */
-      pickImportFile: () => Promise<VDrawFileResult>;
+      /** 统一导入：原生对话框可多选工程 / SVG / 位图，逐文件返回内容。 */
+      pickImportFiles: () => Promise<VDrawFileResult>;
       /** 兼容旧版仅导入 SVG 的入口。 */
       importSvg: () => Promise<VDrawFileResult>;
     };

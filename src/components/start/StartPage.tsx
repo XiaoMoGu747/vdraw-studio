@@ -185,7 +185,7 @@ export function StartPage() {
               <Icon name="upload" size={26} />
             </span>
             <strong>导入文件</strong>
-            <em>工程 / SVG / 位图</em>
+            <em>工程 / SVG / 位图 · 可多选</em>
           </button>
         </div>
 

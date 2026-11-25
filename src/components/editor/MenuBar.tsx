@@ -189,7 +189,7 @@ export function MenuBar() {
         { id: 'open-save-dir', label: '打开保存文件夹', onSelect: () => void fileActions.openSaveDir(), separatorAfter: true },
         {
           id: 'import-file',
-          label: '导入文件（工程 / SVG / 位图）…',
+          label: '导入文件（可多选 / 工程 / SVG / 位图）…',
           onSelect: openImportPanel,
           separatorAfter: true
         },

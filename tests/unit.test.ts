@@ -38,6 +38,7 @@ import {
   imageImportToAppend,
   imageImportToNewDocument,
   imageImportToReplacement,
+  importSourcesToDocument,
   validateImportContent
 } from '../src/core/io/importFile';
 import {
@@ -48,7 +49,14 @@ import {
 } from '../src/core/io/imageImport';
 import { serializeDocument } from '../src/core/io/serialize';
 import { documentToSvgString } from '../src/core/io/svg';
-import { hitTestObject, rotateObject, scaleObject, translateObject } from '../src/core/scene';
+import {
+  hitTestObject,
+  rotateObject,
+  scaleDocumentObjects,
+  scaleObject,
+  translateDocumentObjects,
+  translateObject
+} from '../src/core/scene';
 import { useAppStore } from '../src/store/useAppStore';
 import type {
   EditorSnapshot,
@@ -1354,20 +1362,26 @@ test('位图：头校验区分正常 / 扩展名不符 / 损坏 / 暂不支持',
   );
 });
 
-test('位图：页面内放置优先原始尺寸，超出页面等比缩小并居中', () => {
+test('位图：保持原始尺寸居中，超出页面不缩放、不裁剪', () => {
   const natural = imagePlacement(400, 200, 1000, 1000);
   assert.equal(natural.scale, 1);
   assert.equal(natural.width, 400);
   assert.equal(natural.height, 200);
   assert.equal(natural.x, 300);
   assert.equal(natural.y, 400);
+  assert.equal(natural.exceedsPage, false);
 
-  const fitted = imagePlacement(2000, 1000, 1000, 1000);
-  assert.equal(fitted.scale, 0.5);
-  assert.equal(fitted.width, 1000);
-  assert.equal(fitted.height, 500);
-  assert.equal(fitted.x, 0);
-  assert.equal(fitted.y, 250);
+  const larger = imagePlacement(2000, 1000, 1000, 1000);
+  assert.equal(larger.scale, 1);
+  assert.equal(larger.width, 2000);
+  assert.equal(larger.height, 1000);
+  assert.equal(larger.x, -500);
+  assert.equal(larger.y, 0);
+  assert.equal(larger.exceedsPage, true);
+
+  const offset = imagePlacement(400, 200, 1000, 1000, { x: 28, y: 28 });
+  assert.equal(offset.x, 328);
+  assert.equal(offset.y, 428);
 });
 
 test('位图：新建画布按像素尺寸建页，对象可选中并进入 SVG 导出', () => {
@@ -1465,4 +1479,110 @@ test('位图：.vdraw 保存后可完整还原，外部链接图片被拒绝', (
       }),
     'invalid-layers'
   );
+});
+
+test('批量导入：多文件写入新建图层，保持原始尺寸并可直接选中', () => {
+  const current = createDocument('blank-landscape', '当前');
+  const layer = current.layers[0];
+  const rect = createRectObject(layer.id, DEFAULT_STYLE, 0, 0, 10, 10);
+  const withRect: VDrawDocument = { ...current, layers: [{ ...layer, objects: [rect] }] };
+  const first = imageSource({ fileName: 'a.png', suggestedName: 'a' });
+  const second = imageSource({
+    fileName: 'b.png',
+    suggestedName: 'b',
+    stats: { width: 200, height: 100, bytes: 1024, format: 'png', mime: 'image/png' }
+  });
+
+  const result = importSourcesToDocument(withRect, [first, second], 'layer');
+  assert.equal(result.layersAdded, 2);
+  assert.equal(result.objectsAdded, 2);
+  assert.equal(result.doc.layers.length, withRect.layers.length + 2);
+  assert.equal(result.doc.layers[0].objects.length, 1, '原有图层不受影响');
+  const layerA = result.doc.layers[result.doc.layers.length - 2];
+  const layerB = result.doc.layers[result.doc.layers.length - 1];
+  assert.deepEqual([layerA.name, layerB.name], ['a', 'b']);
+  const imageA = layerA.objects[0] as ImageObject;
+  const imageB = layerB.objects[0] as ImageObject;
+  assert.equal(imageA.width, 400);
+  assert.equal(imageA.height, 200);
+  assert.equal(imageB.width, 200);
+  assert.equal(imageB.x, (withRect.page.width - 200) / 2 + 28);
+  assert.equal(imageB.y, (withRect.page.height - 100) / 2 + 28);
+  assert.equal(result.doc.activeLayerId, layerB.id);
+  assert.deepEqual(result.selection, [imageA.id, imageB.id]);
+
+  // 批量导入后可直接整体移动/缩放（选区跨两个新图层）。
+  const moved = translateDocumentObjects(result.doc, result.selection, 10, 20);
+  const movedA = moved.layers[moved.layers.length - 2].objects[0] as ImageObject;
+  assert.equal(movedA.x, imageA.x + 10);
+  assert.equal(movedA.y, imageA.y + 20);
+  const scaled = scaleDocumentObjects(moved, result.selection, { x: 0, y: 0 }, 1.5, 1.5);
+  const scaledA = scaled.layers[scaled.layers.length - 2].objects[0] as ImageObject;
+  assert.equal(scaledA.width, 600);
+  assert.equal(scaledA.height, 300);
+});
+
+test('批量导入：多文件写入当前图层，不新增图层；空批次与锁定层给出错误', () => {
+  const current = createDocument('blank-landscape', '当前');
+  const layer = current.layers[0];
+  const rect = createRectObject(layer.id, DEFAULT_STYLE, 0, 0, 10, 10);
+  const withRect: VDrawDocument = { ...current, layers: [{ ...layer, objects: [rect] }] };
+  const sources = [
+    imageSource({ fileName: 'a.png', suggestedName: 'a' }),
+    imageSource({ fileName: 'b.png', suggestedName: 'b' })
+  ];
+
+  const result = importSourcesToDocument(withRect, sources, 'append');
+  assert.equal(result.layersAdded, 0);
+  assert.equal(result.doc.layers.length, withRect.layers.length);
+  assert.equal(result.doc.layers[0].objects.length, 3);
+  assert.equal(result.doc.activeLayerId, layer.id);
+  assert.equal(result.selection.length, 2);
+
+  expectImportError(() => importSourcesToDocument(withRect, [], 'layer'), 'empty-file');
+
+  const locked: VDrawDocument = {
+    ...withRect,
+    layers: [{ ...layer, locked: true, objects: [rect] }]
+  };
+  expectImportError(() => importSourcesToDocument(locked, sources, 'append'), 'locked-layer');
+  // 新建图层不依赖当前绘图层是否锁定。
+  const toNewLayer = importSourcesToDocument(locked, [sources[0]], 'layer');
+  assert.equal(toNewLayer.layersAdded, 1);
+});
+
+test('批量导入：工程文件摊平到单一新图层并重映射 ID', () => {
+  const current = createDocument('blank-landscape', '当前');
+  const source = validateImportContent({
+    fileName: '素材.vdraw',
+    content: serializeDocument(importSampleDocument())
+  });
+  assert.equal(source.kind, 'document');
+  if (source.kind !== 'document') return;
+
+  const result = importSourcesToDocument(current, [source], 'layer');
+  assert.equal(result.layersAdded, 1);
+  assert.equal(result.objectsAdded, source.stats.objects);
+  const created = result.doc.layers[result.doc.layers.length - 1];
+  assert.equal(created.name, '素材');
+  assert.equal(created.objects.length, source.stats.objects);
+  const sourceIds = new Set(source.doc.layers.flatMap((item) => item.objects.map((obj) => obj.id)));
+  assert.ok(created.objects.every((object) => !sourceIds.has(object.id)));
+  assert.ok(created.objects.every((object) => object.layerId === created.id));
+  assert.equal(result.selection.length, 2, '两个顶层对象都应被选中');
+});
+
+test('批量导入：超大位图保持原始尺寸，不被自动缩小或裁剪', () => {
+  const current = createDocument('blank-landscape', '当前');
+  const huge = imageSource({
+    fileName: '海报.png',
+    suggestedName: '海报',
+    stats: { width: 2000, height: 1200, bytes: 4096, format: 'png', mime: 'image/png' }
+  });
+  const result = importSourcesToDocument(current, [huge], 'append');
+  const image = result.doc.layers[0].objects[0] as ImageObject;
+  assert.equal(image.width, 2000);
+  assert.equal(image.height, 1200);
+  assert.equal(image.x, (current.page.width - 2000) / 2);
+  assert.ok(result.warnings.some((warning) => warning.includes('不会自动裁剪')));
 });

@@ -93,7 +93,7 @@ export function CommandPalette() {
         id: 'import',
         label: '导入文件…',
         group: '文件',
-        keywords: 'import 导入 vdraw svg json png jpg webp gif bmp 位图 图片 恢复',
+        keywords: 'import 导入 批量 多选 vdraw svg json png jpg webp gif bmp 位图 图片 恢复',
         run: () => state().openImportPanel()
       },
       {

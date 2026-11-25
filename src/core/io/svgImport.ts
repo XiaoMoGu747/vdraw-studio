@@ -504,11 +504,13 @@ export interface SvgImportResult {
 export interface SvgImportOptions {
   /**
    * contain（默认）：等比缩放进页面留白内并居中；
-   * none：保持 SVG 用户单位，只把 viewBox 原点平移到 0,0（用于「新建画布」）。
+   * none：保持 SVG 用户单位，居中放置到页面（超出页面时不缩放）。
    */
   fit?: 'contain' | 'none';
   /** contain 模式的页面留白。 */
   margin?: number;
+  /** 在最终位置的基础上追加的页面坐标偏移（批量导入时错开多份文件）。 */
+  offset?: Vec;
 }
 
 export function parseSvgToObjects(
@@ -536,8 +538,8 @@ export function parseSvgToObjects(
   const fit = options.fit ?? 'contain';
   const margin = options.margin ?? 32;
   let scale = 1;
-  let offsetX = -originX;
-  let offsetY = -originY;
+  let offsetX: number;
+  let offsetY: number;
   if (fit === 'contain') {
     scale = Math.min(
       1,
@@ -547,7 +549,13 @@ export function parseSvgToObjects(
     offsetX = margin + (Math.max(1, pageWidth - margin * 2) - rootWidth * scale) / 2 - originX * scale;
     offsetY =
       margin + (Math.max(1, pageHeight - margin * 2) - rootHeight * scale) / 2 - originY * scale;
+  } else {
+    // 原始尺寸居中：与位图一致，超出页面也不缩放、不裁剪。
+    offsetX = (pageWidth - rootWidth) / 2 - originX;
+    offsetY = (pageHeight - rootHeight) / 2 - originY;
   }
+  offsetX += options.offset?.x ?? 0;
+  offsetY += options.offset?.y ?? 0;
   const rootMatrix: Matrix = { a: scale, b: 0, c: 0, d: scale, e: offsetX, f: offsetY };
 
   const objects: SceneObject[] = [];

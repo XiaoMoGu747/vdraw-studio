@@ -404,23 +404,26 @@ if (!gotLock) {
       }
     });
 
-    // 统一导入入口：工程文件、JSON 与 SVG 共用同一个原生选择器。
-    // 读取后由渲染进程做结构校验，主进程只负责文件格式、大小与编码边界。
+    // 统一导入入口：工程文件、SVG 与位图共用同一个原生选择器，支持多选。
+    // 读取后由渲染进程做结构校验，主进程只负责文件格式、大小与编码边界；
+    // 单个文件失败不会中断整批：错误写回对应条目，由对话框逐条展示。
     ipcMain.handle('file:pick-import', async () => {
-      let filePath = null;
+      let filePaths = [];
       if (isSmoke) {
-        for (const name of ['smoke-import.vdraw', 'smoke-import.svg', 'smoke-import.png']) {
+        for (const name of [
+          'smoke-import.vdraw',
+          'smoke-import.svg',
+          'smoke-import.png',
+          'smoke-import-2.png',
+          'smoke-import-bad.png'
+        ]) {
           const candidate = path.join(artifactsDir(), name);
-          if (fs.existsSync(candidate)) {
-            filePath = candidate;
-            break;
-          }
+          if (fs.existsSync(candidate)) filePaths.push(candidate);
         }
-        if (!filePath) return { canceled: true };
       } else {
         const result = await dialog.showOpenDialog(mainWindow, {
-          title: '导入文件',
-          properties: ['openFile'],
+          title: '导入文件（可多选）',
+          properties: ['openFile', 'multiSelections'],
           filters: [
             {
               name: 'VDraw 工程与图片',
@@ -434,39 +437,58 @@ if (!gotLock) {
           ]
         });
         if (result.canceled || result.filePaths.length === 0) return { canceled: true };
-        filePath = result.filePaths[0];
+        filePaths = result.filePaths;
       }
+      if (filePaths.length === 0) return { canceled: true };
 
-      const stat = await fs.promises.stat(filePath);
       const limit = 64 * 1024 * 1024;
-      if (stat.size > limit) {
-        throw new Error(
-          `文件过大（${(stat.size / (1024 * 1024)).toFixed(1)} MB），单文件上限 64 MB`
-        );
-      }
-      const buffer = await fs.promises.readFile(filePath);
-      const mime = sniffRasterMime(buffer);
-      if (mime) {
-        if (buffer.length > RASTER_MAX_BYTES) {
-          throw new Error(
-            `位图过大（${(buffer.length / (1024 * 1024)).toFixed(1)} MB），单张位图上限 32 MB`
-          );
+      const files = [];
+      for (const filePath of filePaths) {
+        const name = path.basename(filePath);
+        try {
+          const stat = await fs.promises.stat(filePath);
+          if (stat.size > limit) {
+            files.push({
+              name,
+              path: filePath,
+              error: `文件过大（${(stat.size / (1024 * 1024)).toFixed(1)} MB），单文件上限 64 MB`
+            });
+            continue;
+          }
+          const buffer = await fs.promises.readFile(filePath);
+          const mime = sniffRasterMime(buffer);
+          if (mime) {
+            if (buffer.length > RASTER_MAX_BYTES) {
+              files.push({
+                name,
+                path: filePath,
+                error: `位图过大（${(buffer.length / (1024 * 1024)).toFixed(1)} MB），单张位图上限 32 MB`
+              });
+              continue;
+            }
+            files.push({
+              name,
+              path: filePath,
+              dataUrl: `data:${mime};base64,${buffer.toString('base64')}`,
+              bytes: buffer.length
+            });
+          } else {
+            files.push({
+              name,
+              path: filePath,
+              content: buffer.toString('utf8'),
+              bytes: buffer.length
+            });
+          }
+        } catch (error) {
+          files.push({
+            name,
+            path: filePath,
+            error: error instanceof Error ? error.message : String(error)
+          });
         }
-        return {
-          canceled: false,
-          path: filePath,
-          name: path.basename(filePath),
-          dataUrl: `data:${mime};base64,${buffer.toString('base64')}`,
-          bytes: buffer.length
-        };
       }
-      return {
-        canceled: false,
-        path: filePath,
-        name: path.basename(filePath),
-        content: buffer.toString('utf8'),
-        bytes: buffer.length
-      };
+      return { canceled: false, files };
     });
 
     ipcMain.handle('file:import-svg', async () => {

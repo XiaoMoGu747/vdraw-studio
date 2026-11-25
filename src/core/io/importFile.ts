@@ -6,10 +6,10 @@ import type {
   Style,
   VDrawDocument
 } from '../../types/document';
-import { TEMPLATE_MAP, createCustomDocument, drawLayer } from '../document';
+import { TEMPLATE_MAP, createCustomDocument, createLayer, drawLayer } from '../document';
 import { createId } from '../id';
 import { createImageObject } from '../factory';
-import { addObjectsToLayer } from '../scene';
+import { addObjectsToLayer, translateDocumentObjects } from '../scene';
 import { baseName, parseDocumentFile, SCHEMA_VERSION } from './serialize';
 import { parseSvgToObjects } from './svgImport';
 import { ImportError, MAX_IMPORT_BYTES } from './importError';
@@ -30,10 +30,12 @@ export type { ImportedImageSource } from './imageImport';
 export const MAX_PAGE_SIZE = 20000;
 /** 网页端 <input type="file"> 与桌面对话框共用的扩展名白名单。 */
 export const IMPORT_ACCEPT = '.vdraw,.json,.svg,.png,.jpg,.jpeg,.webp,.gif,.bmp';
+/** 单次批量导入的文件数上限：避免一次解码几十张大图把渲染进程拖死。 */
+export const MAX_IMPORT_FILES = 50;
 
 export type ImportFormat = 'vdraw' | 'json' | 'svg';
 
-export type ImportMode = 'replace' | 'new' | 'append';
+export type ImportMode = 'replace' | 'new' | 'append' | 'layer';
 
 export interface ImportFormatGuide {
   id: 'vdraw' | 'json' | 'svg' | 'bitmap' | 'pdf';
@@ -975,9 +977,10 @@ function svgObjects(
   layerId: string,
   pageWidth: number,
   pageHeight: number,
-  fit: 'contain' | 'none'
+  fit: 'contain' | 'none',
+  offset: { x: number; y: number } = { x: 0, y: 0 }
 ): SceneObject[] {
-  return parseSvgToObjects(source.text, layerId, pageWidth, pageHeight, { fit }).objects;
+  return parseSvgToObjects(source.text, layerId, pageWidth, pageHeight, { fit, offset }).objects;
 }
 
 function clampPageSize(value: number): number {
@@ -995,8 +998,7 @@ export function svgImportToNewDocument(
   const name = source.suggestedName || fallbackName || '导入画布';
   const doc = createCustomDocument({ name, width, height }, name);
   const layer = doc.layers[0];
-  const needsFit = source.stats.width > MAX_PAGE_SIZE || source.stats.height > MAX_PAGE_SIZE;
-  const objects = svgObjects(source, layer.id, width, height, needsFit ? 'contain' : 'none');
+  const objects = svgObjects(source, layer.id, width, height, 'none');
   return { doc: addObjectsToLayer(doc, layer.id, objects), objects };
 }
 
@@ -1026,7 +1028,8 @@ export function svgImportToReplacement(
       '请在右侧图层面板解锁该图层后重试。'
     );
   }
-  const objects = svgObjects(source, layer.id, current.page.width, current.page.height, 'contain');
+  // 保持 SVG 原始尺寸：超出页面时也不缩放/裁剪，用户可自行拖动或缩放。
+  const objects = svgObjects(source, layer.id, current.page.width, current.page.height, 'none');
   return {
     doc: {
       ...current,
@@ -1060,7 +1063,7 @@ export function svgImportToAppend(
       '请在右侧图层面板解锁该图层后重试。'
     );
   }
-  const objects = svgObjects(source, layer.id, current.page.width, current.page.height, 'contain');
+  const objects = svgObjects(source, layer.id, current.page.width, current.page.height, 'none');
   return { doc: addObjectsToLayer(current, layer.id, objects), objects, layerId: layer.id };
 }
 
@@ -1075,19 +1078,19 @@ function buildImageObject(
   source: ImportedImageSource,
   layerId: string,
   pageWidth: number,
-  pageHeight: number
+  pageHeight: number,
+  offset: { x: number; y: number } = { x: 0, y: 0 }
 ): { object: SceneObject; warnings: string[] } {
   const placement = imagePlacement(
     source.stats.width,
     source.stats.height,
     pageWidth,
-    pageHeight
+    pageHeight,
+    offset
   );
   const warnings: string[] = [];
-  if (placement.scale < 0.999) {
-    warnings.push(
-      `图片超出页面，已按 ${Math.round(placement.scale * 100)}% 等比缩小并居中`
-    );
+  if (placement.exceedsPage) {
+    warnings.push('图片大于页面，已保持原始尺寸；可拖动或缩放调整，画布不会自动裁剪');
   }
   return {
     object: createImageObject(
@@ -1183,5 +1186,197 @@ export function imageImportToAppend(
     objects: [built.object],
     layerId: layer.id,
     warnings: built.warnings
+  };
+}
+
+/* ------------------------------------------------------------------ *
+ * 批量导入：把多个已校验文件一次性写入「当前图层」或「新建图层」。
+ * 两个落点共用一次 updateDoc，整批导入只产生一个撤销快照。
+ * ------------------------------------------------------------------ */
+
+export type LayerImportMode = 'append' | 'layer';
+
+export interface ImportSourcesBuild {
+  doc: VDrawDocument;
+  /** 本批实际写入的对象（含编组子对象）。 */
+  objects: SceneObject[];
+  /** 顶层对象 ID，用于导入后直接选中并拖动/缩放。 */
+  selection: string[];
+  /** 写入的目标图层：append 为当前绘图层，layer 为各新建图层。 */
+  layerIds: string[];
+  layersAdded: number;
+  objectsAdded: number;
+  warnings: string[];
+}
+
+function uniqueLayerName(base: string, used: Set<string>): string {
+  const clean = base.trim() || '导入图层';
+  if (!used.has(clean)) {
+    used.add(clean);
+    return clean;
+  }
+  let index = 2;
+  while (used.has(`${clean} ${index}`)) index += 1;
+  const name = `${clean} ${index}`;
+  used.add(name);
+  return name;
+}
+
+/** 工程文件按对象写入单一图层：保留编组/镜像/裁剪引用，但不再保留原图层结构。 */
+function flattenDocumentObjects(source: ImportedDocumentSource, layerId: string): SceneObject[] {
+  const objectIds = new Map<string, string>();
+  for (const layer of source.doc.layers) {
+    for (const object of layer.objects) objectIds.set(object.id, createId(object.type));
+  }
+  return source.doc.layers.flatMap((layer) => remapObjects(layer, layerId, objectIds));
+}
+
+/** 批量导入时给后续文件一个 28px 级联偏移，避免多张图完全叠在同一位置。 */
+function offsetImportedObjects(
+  current: VDrawDocument,
+  layerId: string,
+  objects: SceneObject[],
+  dx: number,
+  dy: number
+): SceneObject[] {
+  if ((!dx && !dy) || objects.length === 0) return objects;
+  const temp: VDrawDocument = {
+    ...current,
+    layers: [{ ...createLayer('批量导入临时层'), id: layerId, objects }]
+  };
+  const topIds = objects.filter((object) => !object.parentId).map((object) => object.id);
+  return translateDocumentObjects(temp, topIds, dx, dy).layers[0].objects;
+}
+
+/**
+ * 批量落点：
+ * - append：所有文件写入当前绘图层（工程文件会摊平图层，对象 ID 全部重映射）。
+ * - layer：每个文件新建一个图层，图层名取文件名；同样重映射 ID。
+ * 位图/SVG 保持原始尺寸；超出页面时不缩放、不裁剪，只给出提示。
+ */
+export function importSourcesToDocument(
+  current: VDrawDocument,
+  sources: ImportedSource[],
+  mode: LayerImportMode
+): ImportSourcesBuild {
+  if (sources.length === 0) {
+    throw new ImportError('empty-file', '没有可导入的文件');
+  }
+
+  let layers: Layer[] = [...current.layers];
+  const usedNames = new Set(layers.map((layer) => layer.name));
+  const warnings: string[] = [];
+  const imported: SceneObject[] = [];
+  const createdLayerIds: string[] = [];
+
+  let targetLayerId: string | null = null;
+  if (mode === 'append') {
+    const target = drawLayer(current);
+    if (!target) {
+      throw new ImportError(
+        'no-draw-layer',
+        '当前文档没有可用的绘图层',
+        '请先新建一个普通图层，或把当前选中的文件夹展开后再导入。'
+      );
+    }
+    if (target.locked) {
+      throw new ImportError(
+        'locked-layer',
+        `绘图层「${target.name}」已锁定`,
+        '请在右侧图层面板解锁该图层后重试。'
+      );
+    }
+    targetLayerId = target.id;
+  }
+
+  const cascade = sources.length > 1;
+  sources.forEach((source, index) => {
+    const offset = {
+      x: cascade ? index * 28 : 0,
+      y: cascade ? index * 28 : 0
+    };
+    let layerId = targetLayerId;
+    let createdLayer: Layer | null = null;
+    if (mode === 'layer') {
+      createdLayer = createLayer(
+        uniqueLayerName(source.suggestedName || '导入图层', usedNames),
+        'vector'
+      );
+      layerId = createdLayer.id;
+    }
+    if (!layerId) return;
+
+    let objects: SceneObject[] = [];
+    if (source.kind === 'document') {
+      objects = flattenDocumentObjects(source, layerId);
+      objects = offsetImportedObjects(current, layerId, objects, offset.x, offset.y);
+    } else if (source.kind === 'image') {
+      const built = buildImageObject(
+        source,
+        layerId,
+        current.page.width,
+        current.page.height,
+        offset
+      );
+      objects = [built.object];
+      warnings.push(...built.warnings.map((warning) => `「${source.fileName}」${warning}`));
+    } else {
+      objects = svgObjects(
+        source,
+        layerId,
+        current.page.width,
+        current.page.height,
+        'none',
+        offset
+      );
+      if (source.stats.width > current.page.width || source.stats.height > current.page.height) {
+        warnings.push(
+          `「${source.fileName}」画布尺寸大于页面，已保持原始尺寸；可拖动或缩放调整`
+        );
+      }
+    }
+
+    if (objects.length === 0) {
+      warnings.push(`「${source.fileName}」没有可导入的对象`);
+      return;
+    }
+
+    if (createdLayer) {
+      layers = [...layers, { ...createdLayer, objects }];
+      createdLayerIds.push(createdLayer.id);
+    } else {
+      layers = layers.map((layer) =>
+        layer.id === layerId ? { ...layer, objects: [...layer.objects, ...objects] } : layer
+      );
+    }
+    imported.push(...objects);
+  });
+
+  if (imported.length === 0) {
+    throw new ImportError(
+      'empty-file',
+      '选中的文件没有可导入的对象',
+      '请选择包含图形或位图的文件；空工程可以改用「新建画布」。'
+    );
+  }
+
+  const activeLayerId =
+    mode === 'append'
+      ? targetLayerId ?? current.activeLayerId
+      : createdLayerIds[createdLayerIds.length - 1] ?? current.activeLayerId;
+
+  return {
+    doc: {
+      ...current,
+      layers,
+      activeLayerId,
+      updatedAt: new Date().toISOString()
+    },
+    objects: imported,
+    selection: imported.filter((object) => !object.parentId).map((object) => object.id),
+    layerIds: mode === 'append' ? (targetLayerId ? [targetLayerId] : []) : createdLayerIds,
+    layersAdded: createdLayerIds.length,
+    objectsAdded: imported.length,
+    warnings
   };
 }

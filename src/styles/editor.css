@@ -831,7 +831,7 @@
 }
 
 .modal--import .modal__body {
-  max-height: 68vh;
+  max-height: 74vh;
 }
 
 .import-dialog {
@@ -1066,6 +1066,105 @@
   padding: 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
+}
+
+.import-badge--error {
+  background: var(--danger-soft);
+  color: var(--danger-text);
+}
+
+.import-batch {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.import-batch__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.import-batch__head strong {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.import-batch__head span {
+  font-size: var(--fs-2xs);
+  color: var(--text-3);
+}
+
+.import-batch__list {
+  list-style: none;
+  margin: 0;
+  padding: 2px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+.import-batch__item {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-chrome);
+  overflow: hidden;
+}
+
+.import-batch__item.is-active {
+  border-color: var(--accent-text);
+  background: var(--accent-soft);
+}
+
+.import-batch__button {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  text-align: left;
+}
+
+.import-batch__name {
+  overflow: hidden;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.import-batch__meta {
+  font-size: var(--fs-2xs);
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.import-batch__error {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 12px 8px;
+  border-top: 1px solid var(--border-subtle);
+  font-size: var(--fs-2xs);
+  line-height: var(--lh-tight);
+  color: var(--danger-text);
+}
+
+.import-batch__error strong {
+  font-weight: 600;
+}
+
+.import-batch__error span {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
 }
 
 .import-summary__head {
