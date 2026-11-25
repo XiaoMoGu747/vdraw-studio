@@ -168,13 +168,30 @@ export function MenuBar() {
 
   const runCleanup = () => {
     const state = useAppStore.getState();
-    const result = cleanupStructure(state.doc, state.selection);
+    // 自动整理始终覆盖当前画布全部可见、未锁定图层，不只处理选中的键。
+    let result;
+    try {
+      result = cleanupStructure(state.doc);
+    } catch (error) {
+      notify(
+        `结构整理失败：${error instanceof Error ? error.message : String(error)}`,
+        'warn'
+      );
+      return;
+    }
+    if (result.structures === 0) {
+      notify('当前画布没有可整理的化学结构', 'warn');
+      return;
+    }
     if (result.moved === 0) {
-      notify('当前没有可整理的化学结构', 'warn');
+      notify(`已检查 ${result.structures} 个结构，均符合规范`, 'info');
       return;
     }
     updateDoc(result.doc, true);
-    notify(`已整理 ${result.moved} 个结构节点`, 'success');
+    notify(
+      `已整理 ${result.changed} 个结构、${result.moved} 个节点`,
+      'success'
+    );
   };
 
   const menus: MenuDef[] = [
@@ -278,7 +295,7 @@ export function MenuBar() {
       label: '化学',
       items: [
         { id: 'valence', label: '化合价校验…', onSelect: runCheck },
-        { id: 'cleanup', label: '结构自动整理', onSelect: runCleanup, separatorAfter: true },
+        { id: 'cleanup', label: '结构自动整理（全画布）', onSelect: runCleanup, separatorAfter: true },
         { id: 'export-mol', label: '导出 MOL…', onSelect: () => void exportChemFile('mol') },
         { id: 'export-smiles', label: '导出 SMILES…', onSelect: () => void exportChemFile('smiles') },
         { id: 'chem-sep', label: '', separatorAfter: true },

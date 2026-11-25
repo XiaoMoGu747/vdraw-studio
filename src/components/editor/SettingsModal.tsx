@@ -2,12 +2,12 @@ import { useEffect, useState } from 'react';
 import { BOND_PRESETS } from '../../core/chemistry/presets';
 import { TOOLS } from '../../core/tools';
 import {
+  CHEM_BOND_LENGTH_DEFAULT,
   CHEM_BOND_LENGTH_RANGE,
-  CHEM_BOND_LENGTH_RECOMMENDED,
+  CHEM_BOND_SPACING_DEFAULT,
   CHEM_BOND_SPACING_RANGE,
-  CHEM_BOND_SPACING_RECOMMENDED,
+  CHEM_BOND_WIDTH_DEFAULT,
   CHEM_BOND_WIDTH_RANGE,
-  CHEM_BOND_WIDTH_RECOMMENDED,
   useAppStore
 } from '../../store/useAppStore';
 import type { IconName } from '../../types/ui';
@@ -107,6 +107,8 @@ export function SettingsModal() {
   const chemBondLength = useAppStore((state) => state.chemBondLength);
   const chemBondWidth = useAppStore((state) => state.chemBondWidth);
   const chemBondSpacing = useAppStore((state) => state.chemBondSpacing);
+  const setChemBondMetric = useAppStore((state) => state.setChemBondMetric);
+  const resetChemBondMetrics = useAppStore((state) => state.resetChemBondMetrics);
   const setChemBondLength = useAppStore((state) => state.setChemBondLength);
   const setChemBondWidth = useAppStore((state) => state.setChemBondWidth);
   const setChemBondSpacing = useAppStore((state) => state.setChemBondSpacing);
@@ -439,12 +441,39 @@ export function SettingsModal() {
                 onChange={toggleImplicitHydrogens}
                 testId="settings-implicit-hydrogens"
               />
+              <div className="settings-bond-tools">
+                <button
+                  type="button"
+                  className={`settings-bond-link${chem.bondUniform ? ' is-active' : ''}`}
+                  data-testid="settings-bond-uniform"
+                  aria-pressed={chem.bondUniform}
+                  title={
+                    chem.bondUniform
+                      ? '等比联动：修改任一参数时，另外两项按同一倍率调整'
+                      : '独立调整：键长 / 键宽 / 键距分别设置'
+                  }
+                  onClick={() => setChem({ bondUniform: !chem.bondUniform })}
+                >
+                  <Icon name={chem.bondUniform ? 'link' : 'unlink'} size={14} />
+                  {chem.bondUniform ? '等比联动' : '独立调整'}
+                </button>
+                <button
+                  type="button"
+                  className="settings-range__reset"
+                  data-testid="settings-bond-defaults"
+                  title="恢复化学键默认值"
+                  onClick={resetChemBondMetrics}
+                >
+                  恢复默认 {CHEM_BOND_LENGTH_DEFAULT} / {CHEM_BOND_WIDTH_DEFAULT} /{' '}
+                  {CHEM_BOND_SPACING_DEFAULT}
+                </button>
+              </div>
               <label className="settings-field">
                 <span>
-                  <strong>默认键长</strong>
+                  <strong>化学键键长</strong>
                   <em>
-                    新建化学键与环系使用的长度；键工具拖拽时按此值吸附（推荐{' '}
-                    {CHEM_BOND_LENGTH_RECOMMENDED}px）
+                    新建化学键与环系使用的长度；范围 {CHEM_BOND_LENGTH_RANGE.min}–
+                    {CHEM_BOND_LENGTH_RANGE.max}px，默认 {CHEM_BOND_LENGTH_DEFAULT}px
                   </em>
                 </span>
                 <div className="settings-range">
@@ -455,26 +484,29 @@ export function SettingsModal() {
                     step={1}
                     value={chemBondLength}
                     data-testid="settings-bond-length"
-                    onChange={(event) => setChemBondLength(Number(event.target.value))}
+                    onChange={(event) =>
+                      setChemBondMetric('length', Number(event.target.value))
+                    }
                   />
                   <b>{Math.round(chemBondLength)}px</b>
                   <button
                     type="button"
                     className="settings-range__reset"
                     data-testid="settings-bond-length-reset"
-                    disabled={Math.abs(chemBondLength - CHEM_BOND_LENGTH_RECOMMENDED) < 0.01}
-                    title={`恢复推荐键长 ${CHEM_BOND_LENGTH_RECOMMENDED}px`}
-                    onClick={() => setChemBondLength(CHEM_BOND_LENGTH_RECOMMENDED)}
+                    disabled={Math.abs(chemBondLength - CHEM_BOND_LENGTH_DEFAULT) < 0.01}
+                    title={`恢复默认键长 ${CHEM_BOND_LENGTH_DEFAULT}px`}
+                    onClick={() => setChemBondLength(CHEM_BOND_LENGTH_DEFAULT)}
                   >
-                    推荐 {CHEM_BOND_LENGTH_RECOMMENDED}px
+                    默认 {CHEM_BOND_LENGTH_DEFAULT}px
                   </button>
                 </div>
               </label>
               <label className="settings-field">
                 <span>
-                  <strong>默认键粗细</strong>
+                  <strong>化学键键宽</strong>
                   <em>
-                    新建化学键与芳香内圈的线宽（推荐 {CHEM_BOND_WIDTH_RECOMMENDED.toFixed(1)}px）
+                    新建化学键与芳香内圈的线宽；范围 {CHEM_BOND_WIDTH_RANGE.min}–
+                    {CHEM_BOND_WIDTH_RANGE.max}px，默认 {CHEM_BOND_WIDTH_DEFAULT.toFixed(1)}px
                   </em>
                 </span>
                 <div className="settings-range">
@@ -485,27 +517,29 @@ export function SettingsModal() {
                     step={0.1}
                     value={chemBondWidth}
                     data-testid="settings-bond-width"
-                    onChange={(event) => setChemBondWidth(Number(event.target.value))}
+                    onChange={(event) =>
+                      setChemBondMetric('width', Number(event.target.value))
+                    }
                   />
                   <b>{chemBondWidth.toFixed(1)}px</b>
                   <button
                     type="button"
                     className="settings-range__reset"
                     data-testid="settings-bond-width-reset"
-                    disabled={Math.abs(chemBondWidth - CHEM_BOND_WIDTH_RECOMMENDED) < 0.01}
-                    title={`恢复推荐键粗 ${CHEM_BOND_WIDTH_RECOMMENDED.toFixed(1)}px`}
-                    onClick={() => setChemBondWidth(CHEM_BOND_WIDTH_RECOMMENDED)}
+                    disabled={Math.abs(chemBondWidth - CHEM_BOND_WIDTH_DEFAULT) < 0.01}
+                    title={`恢复默认键宽 ${CHEM_BOND_WIDTH_DEFAULT.toFixed(1)}px`}
+                    onClick={() => setChemBondWidth(CHEM_BOND_WIDTH_DEFAULT)}
                   >
-                    推荐 {CHEM_BOND_WIDTH_RECOMMENDED.toFixed(1)}px
+                    默认 {CHEM_BOND_WIDTH_DEFAULT.toFixed(1)}px
                   </button>
                 </div>
               </label>
               <label className="settings-field">
                 <span>
-                  <strong>双键 / 三键间距</strong>
+                  <strong>化学键键距</strong>
                   <em>
-                    新建双键、三键与芳香内线的平行线间距（推荐{' '}
-                    {CHEM_BOND_SPACING_RECOMMENDED.toFixed(1)}px）
+                    双键 / 三键与芳香内线的平行线间距；范围 {CHEM_BOND_SPACING_RANGE.min}–
+                    {CHEM_BOND_SPACING_RANGE.max}px，默认 {CHEM_BOND_SPACING_DEFAULT.toFixed(1)}px
                   </em>
                 </span>
                 <div className="settings-range">
@@ -516,20 +550,20 @@ export function SettingsModal() {
                     step={0.1}
                     value={chemBondSpacing}
                     data-testid="settings-bond-spacing"
-                    onChange={(event) => setChemBondSpacing(Number(event.target.value))}
+                    onChange={(event) =>
+                      setChemBondMetric('spacing', Number(event.target.value))
+                    }
                   />
                   <b>{chemBondSpacing.toFixed(1)}px</b>
                   <button
                     type="button"
                     className="settings-range__reset"
                     data-testid="settings-bond-spacing-reset"
-                    disabled={
-                      Math.abs(chemBondSpacing - CHEM_BOND_SPACING_RECOMMENDED) < 0.01
-                    }
-                    title={`恢复推荐键距 ${CHEM_BOND_SPACING_RECOMMENDED.toFixed(1)}px`}
-                    onClick={() => setChemBondSpacing(CHEM_BOND_SPACING_RECOMMENDED)}
+                    disabled={Math.abs(chemBondSpacing - CHEM_BOND_SPACING_DEFAULT) < 0.01}
+                    title={`恢复默认键距 ${CHEM_BOND_SPACING_DEFAULT.toFixed(1)}px`}
+                    onClick={() => setChemBondSpacing(CHEM_BOND_SPACING_DEFAULT)}
                   >
-                    推荐 {CHEM_BOND_SPACING_RECOMMENDED.toFixed(1)}px
+                    默认 {CHEM_BOND_SPACING_DEFAULT.toFixed(1)}px
                   </button>
                 </div>
               </label>

@@ -1653,12 +1653,12 @@ async function runSmokeFlow(win, smokeErrors) {
 
   // ---- 点击已有键：循环键级（单 → 双 → 三）----
   await selectTool('bond');
-  // 「默认键长」会持久化到 localStorage：人工验证时若开启过，拖拽画出的键被锁到 40px，
+  // 「固定化学键」会持久化到 localStorage：人工验证时若开启过，拖拽画出的键被锁到当前键长，
   // 下面依赖拖拽长度（cycleMid - 55 落在原子端点上）的悬停断言就会失稳。先强制关闭。
   await readDom(
     win,
     `(() => {
-      const button = document.querySelector('[data-testid="bond-fixed-length"]');
+      const button = document.querySelector('[data-testid="bond-fixed"]');
       if (!button) return false;
       if (button.getAttribute('aria-pressed') === 'true') button.click();
       return true;
@@ -5612,7 +5612,7 @@ async function runSmokeFlow(win, smokeErrors) {
       win,
       `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', code: 'ArrowRight', bubbles: true }))`
     );
-    await sleep(560);
+    await sleep(900);
     await readDom(
       win,
       `window.dispatchEvent(new KeyboardEvent('keyup', { key: 'ArrowRight', code: 'ArrowRight', bubbles: true }))`
@@ -5921,6 +5921,171 @@ async function runSmokeFlow(win, smokeErrors) {
     chemFocus = { ok: false, error: error instanceof Error ? error.message : String(error) };
   }
   console.log('CHEM_FOCUS ' + JSON.stringify(chemFocus));
+
+  // ---- 化学参数扩展：默认值、等比联动、固定化学键、设置命名与全画布整理 ----
+  let chemExtras = { ok: false };
+  const readLastBond = `(() => {
+    const groups = [...document.querySelectorAll('.scene-layer [data-object-id]')];
+    const group = [...groups].reverse().find((item) => {
+      const lines = item.querySelectorAll('line');
+      return lines.length >= 2 && !item.querySelector('path, rect, text, image');
+    });
+    if (!group) return null;
+    const lines = [...group.querySelectorAll('line')].map((line) => ({
+      x1: Number(line.getAttribute('x1')),
+      y1: Number(line.getAttribute('y1')),
+      x2: Number(line.getAttribute('x2')),
+      y2: Number(line.getAttribute('y2')),
+      width: Number(line.getAttribute('stroke-width'))
+    }));
+    const length = (line) => Math.hypot(line.x2 - line.x1, line.y2 - line.y1);
+    const main = lines.reduce((best, line) => (length(line) > length(best) ? line : best));
+    const dx = main.x2 - main.x1;
+    const dy = main.y2 - main.y1;
+    const norm = Math.max(0.001, Math.hypot(dx, dy));
+    const gaps = lines
+      .filter((line) => line !== main)
+      .map((line) => {
+        const px = (line.x1 + line.x2) / 2;
+        const py = (line.y1 + line.y2) / 2;
+        return Math.abs((px - main.x1) * dy - (py - main.y1) * dx) / norm;
+      })
+      .filter((gap) => gap > 0.1);
+    return {
+      lines: lines.length,
+      length: length(main),
+      width: main.width,
+      gap: gaps.length > 0 ? Math.min(...gaps) : null
+    };
+  })()`;
+  try {
+    await readDom(win, `document.querySelector('[data-testid="chem-bond-defaults"]')?.click()`);
+    await sleep(180);
+    const defaults = await readDom(
+      win,
+      `(() => ({
+        length: document.querySelector('[data-testid="chem-bond-length"]')?.value ?? null,
+        width: document.querySelector('[data-testid="chem-bond-width"]')?.value ?? null,
+        spacing: document.querySelector('[data-testid="chem-bond-spacing"]')?.value ?? null,
+        oldOptions: document.querySelectorAll('[data-testid="bond-fixed-length"], [data-testid="bond-width-lock"]').length,
+        fixed: Boolean(document.querySelector('[data-testid="bond-fixed"]'))
+      }))()`
+    );
+    await readDom(win, `document.querySelector('[data-testid="chem-bond-uniform"]')?.click()`);
+    await sleep(140);
+    const uniformOn = await readDom(
+      win,
+      `document.querySelector('[data-testid="chem-bond-uniform"]')?.getAttribute('aria-pressed') === 'true'`
+    );
+    await readDom(win, setInputValue('[data-testid="chem-bond-length"]', 80));
+    await sleep(200);
+    const uniformScaled = await readDom(
+      win,
+      `(() => ({
+        length: document.querySelector('[data-testid="chem-bond-length"]')?.value ?? null,
+        width: document.querySelector('[data-testid="chem-bond-width"]')?.value ?? null,
+        spacing: document.querySelector('[data-testid="chem-bond-spacing"]')?.value ?? null
+      }))()`
+    );
+    await readDom(win, `document.querySelector('[data-testid="chem-bond-uniform"]')?.click()`);
+    await readDom(win, `document.querySelector('[data-testid="chem-bond-defaults"]')?.click()`);
+    await sleep(180);
+    await readDom(win, `document.querySelector('[data-chem-category="bond"]')?.click()`);
+    await sleep(160);
+    await readDom(win, `document.querySelector('[data-testid="bond-fixed"]')?.click()`);
+    await sleep(160);
+    const fixedOn = await readDom(
+      win,
+      `document.querySelector('[data-testid="bond-fixed"]')?.getAttribute('aria-pressed') === 'true'`
+    );
+    await readDom(win, dragExpression(0.62, 0.08, 0.76, 0.08));
+    await sleep(340);
+    const fixedBond = await readDom(win, readLastBond);
+    await readDom(win, `document.querySelector('[data-testid="bond-fixed"]')?.click()`);
+    await sleep(120);
+
+    await readDom(win, `document.querySelector('[data-testid="settings-button"]')?.click()`);
+    await sleep(240);
+    await readDom(
+      win,
+      `document.querySelector('[data-testid="settings-tab-chemistry"]')?.click()`
+    );
+    await sleep(200);
+    const settingsText = await readDom(
+      win,
+      `document.querySelector('[data-testid="settings-panel-chemistry"]')?.textContent || ''`
+    );
+    const ranges = await readDom(
+      win,
+      `(() => ({
+        lengthMax: document.querySelector('[data-testid="settings-bond-length"]')?.max ?? null,
+        widthMax: document.querySelector('[data-testid="settings-bond-width"]')?.max ?? null,
+        spacingMax: document.querySelector('[data-testid="settings-bond-spacing"]')?.max ?? null,
+        reset: Boolean(document.querySelector('[data-testid="settings-bond-defaults"]'))
+      }))()`
+    );
+    await readDom(win, `document.querySelector('.modal [aria-label="关闭"]')?.click()`);
+    await sleep(200);
+
+    await readDom(
+      win,
+      `[...document.querySelectorAll('.menubar__trigger')].find((el) => el.textContent === '化学').click()`
+    );
+    await sleep(180);
+    await readDom(
+      win,
+      `(() => {
+        const item = [...document.querySelectorAll('.menu-dropdown .menu-item')].find((el) =>
+          (el.textContent || '').includes('结构自动整理')
+        );
+        if (item) item.click();
+        return Boolean(item);
+      })()`
+    );
+    await sleep(320);
+    const cleanupToast = await readDom(
+      win,
+      `[...document.querySelectorAll('[data-testid="toast"]')].map((el) => el.textContent || '').join('|')`
+    );
+
+    chemExtras = {
+      ok:
+        defaults.length === '40' &&
+        defaults.width === '2.2' &&
+        defaults.spacing === '4.2' &&
+        defaults.oldOptions === 0 &&
+        defaults.fixed &&
+        uniformOn &&
+        uniformScaled.length === '80' &&
+        uniformScaled.width === '4.4' &&
+        uniformScaled.spacing === '8.4' &&
+        fixedOn &&
+        fixedBond &&
+        Math.abs(fixedBond.length - 40) < 1 &&
+        Math.abs(fixedBond.width - 2.2) < 0.2 &&
+        fixedBond.gap !== null &&
+        Math.abs(fixedBond.gap - 4.2) < 0.5 &&
+        settingsText.includes('化学键键长') &&
+        settingsText.includes('化学键键宽') &&
+        settingsText.includes('化学键键距') &&
+        ranges.lengthMax === '400' &&
+        ranges.widthMax === '40' &&
+        ranges.spacingMax === '100' &&
+        ranges.reset &&
+        (cleanupToast.includes('已整理') || cleanupToast.includes('已检查')),
+      defaults,
+      uniformOn,
+      uniformScaled,
+      fixedOn,
+      fixedBond,
+      ranges,
+      cleanupToast
+    };
+  } catch (error) {
+    chemExtras = { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+  console.log('CHEM_EXTRAS ' + JSON.stringify(chemExtras));
+  console.log('SMOKE_CONSOLE_MESSAGES ' + JSON.stringify(smokeErrors));
 
   const failed =
     alphaClip.defs <= 0 ||
@@ -6485,6 +6650,7 @@ async function runSmokeFlow(win, smokeErrors) {
     !imageImport.ok ||
     !batchImport.ok ||
     !chemFocus.ok ||
+    !chemExtras.ok ||
     smokeErrors.length > 0;
 
   if (failed) {

@@ -132,12 +132,9 @@ interface BrushPreview {
   widths: number[];
 }
 
-/** 生效中的键粗：锁定后固定用设置值，未锁时跟随左侧「大小」滑杆。 */
+/** 生效中的键宽：统一由「键宽」参数控制，不再跟随左侧「大小」滑杆。 */
 function effectiveChemBondWidth(): number {
-  const state = useAppStore.getState();
-  return state.chem.bondWidthLocked === false
-    ? state.defaultStyle.stroke.width
-    : state.chemBondWidth;
+  return useAppStore.getState().chemBondWidth;
 }
 
 /** 化学键样式：线宽取「设置 → 化学 → 默认粗细」，颜色固定为墨黑。 */
@@ -3018,12 +3015,45 @@ export function CanvasStage() {
           : null;
       const startScale = chemAnchorScale(startAnchor);
       const baseLength = state.chemBondLength * startScale;
+      const rawDistance = Math.hypot(point.x - drag.origin.x, point.y - drag.origin.y);
+      const preferred = { x: point.x - drag.origin.x, y: point.y - drag.origin.y };
       let end = findConnection(state.doc, point, tolerance) ?? point;
       if (end === point) {
         if (state.snapEnabled && !alt) {
           end = gridPoint(end, state.doc, true, false);
         }
-        if (!shift) {
+        if (drag.mode === 'bond' && startAnchor && !shift) {
+          // 从已有结构延伸时先按价层/杂化选择规范方向，再套用长度规则：
+          // 预览和落笔共用同一方向，避免松手后键突然跳到另一个角度。
+          const plannedOrder = Math.max(
+            1,
+            Math.min(bondOrderForType(state.chem.bondType), maxNewBondOrderForAnchor(startAnchor))
+          );
+          const geometry = nextChainBond(
+            state.doc,
+            startAnchor,
+            preferred,
+            plannedOrder,
+            baseLength
+          );
+          if (geometry) {
+            const direction = {
+              x: geometry.end.x - geometry.start.x,
+              y: geometry.end.y - geometry.start.y
+            };
+            const directionLength = Math.max(0.001, Math.hypot(direction.x, direction.y));
+            const length =
+              state.chem.bondFixed || startScale !== 1
+                ? baseLength
+                : rawDistance > 24 && rawDistance < 180
+                  ? rawDistance
+                  : baseLength;
+            end = {
+              x: drag.origin.x + (direction.x / directionLength) * length,
+              y: drag.origin.y + (direction.y / directionLength) * length
+            };
+          }
+        } else if (!shift) {
           const dx = end.x - drag.origin.x;
           const dy = end.y - drag.origin.y;
           const length = Math.hypot(dx, dy);
@@ -3034,11 +3064,8 @@ export function CanvasStage() {
             let snappedLength = length;
             const ideal = Math.round(length / baseLength) * baseLength;
             if (Math.abs(length - ideal) < 8) snappedLength = ideal;
-            // 默认键长：预览与落笔长度一致；从已缩放结构延伸时也沿用同一比例。
-            if (
-              drag.mode === 'bond' &&
-              (state.chem.bondLengthLocked || startScale !== 1)
-            ) {
+            // 固定化学键：预览与落笔长度一致；从已缩放结构延伸时也沿用同一比例。
+            if (drag.mode === 'bond' && (state.chem.bondFixed || startScale !== 1)) {
               snappedLength = baseLength;
             }
             if (drag.mode === 'arrow' && shift) snappedAngle = angle;
@@ -4060,9 +4087,9 @@ export function CanvasStage() {
         geometry.end.y - geometry.start.y
       );
       const dragLength = Math.hypot(preferred.x, preferred.y);
-      // 默认键长开启时忽略拖拽距离；已缩放结构也沿用同一比例。
+      // 固定化学键时忽略拖拽距离；已缩放结构也沿用同一比例。
       const length =
-        state.chem.bondLengthLocked || anchorScale !== 1
+        state.chem.bondFixed || anchorScale !== 1
           ? baseLength
           : dragLength > 24 && dragLength < 180
             ? dragLength
@@ -4404,9 +4431,9 @@ export function CanvasStage() {
     }
     if (
       drag.mode === 'bond' &&
-      (state.chem.bondLengthLocked || startScale !== 1)
+      (state.chem.bondFixed || startScale !== 1)
     ) {
-      // 默认键长：拖拽只决定方向，长度一律回落到标准键长；已缩放结构沿用同一比例。
+      // 固定化学键：拖拽只决定方向与摆放，长度回落到当前键长参数；已缩放结构沿用同一比例。
       const dx = end.x - drag.origin.x;
       const dy = end.y - drag.origin.y;
       const length = Math.hypot(dx, dy);

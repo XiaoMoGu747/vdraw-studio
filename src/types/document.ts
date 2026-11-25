@@ -445,10 +445,10 @@ export type ExportScope = 'page' | 'region' | 'selection';
 
 export interface ChemToolState {
   bondType: BondType;
-  /** 默认键长：点击与拖拽绘制的化学键一律使用标准键长，不再跟随拖拽距离。 */
-  bondLengthLocked: boolean;
-  /** 默认粗细锁定：锁定后固定用设置里的粗细，未锁时跟随左侧「大小」滑杆。 */
-  bondWidthLocked: boolean;
+  /** 固定化学键：新键只允许改变方向与摆放，长度/键宽/键距严格使用当前参数。 */
+  bondFixed: boolean;
+  /** 键长 / 键宽 / 键距等比联动：修改任一参数时按同一倍率调整另外两项。 */
+  bondUniform: boolean;
   element: string;
   atomPresetId: string;
   /** 原子子工具分类：元素 / 官能团 */

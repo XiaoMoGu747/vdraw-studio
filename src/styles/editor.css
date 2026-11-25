@@ -3259,7 +3259,7 @@ html[data-rail-labels='true'] .rail-btn::after {
   flex: none;
 }
 
-/* 底部行为行（默认键长 / 环大小 / 默认式样 / 插入）：跨满整行，
+/* 底部行为行（固定化学键 / 环大小 / 默认式样 / 插入）：跨满整行，
    与上面的模板网格用一条细线分开，不再挤成竖列。 */
 .chem-subpanel__foot {
   grid-column: 1 / -1;
@@ -3305,6 +3305,11 @@ html[data-rail-labels='true'] .rail-btn::after {
 
 .chem-param__name {
   font-weight: 500;
+}
+
+.chem-param__hint {
+  font-size: var(--fs-2xs);
+  color: var(--text-3);
 }
 
 .chem-param__glyph {
@@ -3458,6 +3463,29 @@ html[data-rail-labels='true'] .rail-btn::after {
 
 .chem-param-field em {
   display: none;
+}
+
+/* 一级横栏里的等比联动与恢复默认：图标按钮，避免继续挤占横向空间。 */
+.chem-metric-link,
+.chem-metric-reset {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-sm);
+  color: var(--text-3);
+}
+
+.chem-metric-link:hover,
+.chem-metric-reset:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.chem-metric-link.is-active {
+  background: var(--accent-soft);
+  color: var(--accent-text);
 }
 
 .mode-field--color input[type='color'] {
@@ -3782,6 +3810,38 @@ html[data-rail-labels='true'] .rail-btn::after {
 
 .settings-toggle.is-on .settings-switch span {
   transform: translateX(14px);
+}
+
+.settings-bond-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding-top: 8px;
+}
+
+.settings-bond-link {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--neutral-0);
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+
+.settings-bond-link:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.settings-bond-link.is-active {
+  background: var(--accent-soft);
+  border-color: var(--blue-200);
+  color: var(--accent-text);
 }
 
 .settings-field {

@@ -18,7 +18,15 @@ import {
 } from '../../core/scene';
 import { patchTextObject } from '../../core/textLayout';
 import { warpSelection } from '../../core/perspectiveWarp';
-import { useAppStore } from '../../store/useAppStore';
+import {
+  CHEM_BOND_LENGTH_DEFAULT,
+  CHEM_BOND_LENGTH_RANGE,
+  CHEM_BOND_SPACING_DEFAULT,
+  CHEM_BOND_SPACING_RANGE,
+  CHEM_BOND_WIDTH_DEFAULT,
+  CHEM_BOND_WIDTH_RANGE,
+  useAppStore
+} from '../../store/useAppStore';
 import { Icon } from '../ui/Icon';
 import { RingGlyph } from '../chemistry/RingGlyph';
 
@@ -130,63 +138,6 @@ const CHEM_CATEGORIES = [
 
 type FeatureKey = 'symmetry' | 'guides' | 'chem' | 'bucket' | 'shape' | 'text' | 'eraser';
 
-/**
- * 化学键参数示意图：
- * 键长 = 一根键，两端用箭头向外拉；键粗 = 一根键，两端用竖直箭头把上下边撑开。
- */
-function BondParamGlyph({ kind }: { kind: 'length' | 'width' }) {
-  if (kind === 'length') {
-    return (
-      <svg
-        className="chem-param__glyph"
-        viewBox="0 0 28 12"
-        width="28"
-        height="12"
-        aria-hidden="true"
-        focusable="false"
-      >
-        <path d="M8 6h12" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
-        <path
-          d="M3 6h22M6.6 3.4 3 6l3.6 2.6M21.4 3.4 25 6l-3.6 2.6"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.3"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-    );
-  }
-  return (
-    <svg
-      className="chem-param__glyph"
-      viewBox="0 0 28 12"
-      width="28"
-      height="12"
-      aria-hidden="true"
-      focusable="false"
-    >
-      <path d="M5 6h18" stroke="currentColor" strokeWidth="3.4" strokeLinecap="round" />
-      <path
-        d="M8 1.6v8.8M6.6 3.4 8 1.6l1.4 1.8M6.6 8.6 8 10.4l1.4-1.8"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M20 1.6v8.8M18.6 3.4 20 1.6l1.4 1.8M18.6 8.6 20 10.4l1.4-1.8"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
 /** 横栏比可视宽度长时，鼠标滚轮也能横向滑动（不必去拖底部细滚动条）。 */
 function scrollDockHorizontally(event: ReactWheelEvent<HTMLDivElement>) {
   // 横栏在画布视口内部：滚轮只用于横向浏览，不能再冒泡成画布缩放。
@@ -215,10 +166,8 @@ export function ToolModeBar() {
   const bondLength = useAppStore((state) => state.chemBondLength);
   const bondWidth = useAppStore((state) => state.chemBondWidth);
   const bondSpacing = useAppStore((state) => state.chemBondSpacing);
-  const setChemBondLength = useAppStore((state) => state.setChemBondLength);
-  const setChemBondWidth = useAppStore((state) => state.setChemBondWidth);
-  const setChemBondSpacing = useAppStore((state) => state.setChemBondSpacing);
-  const defaultStyle = useAppStore((state) => state.defaultStyle);
+  const setChemBondMetric = useAppStore((state) => state.setChemBondMetric);
+  const resetChemBondMetrics = useAppStore((state) => state.resetChemBondMetrics);
   const symmetry = useAppStore((state) => state.symmetry);
   const setSymmetry = useAppStore((state) => state.setSymmetry);
   const setSymmetryAxis = useAppStore((state) => state.setSymmetryAxis);
@@ -497,7 +446,7 @@ export function ToolModeBar() {
                 {preset.name}
               </button>
             ))}
-            {/* 默认键长/键粗：锁定图标 + 名称 + 示意图 + 当前值，数值取自「设置 → 化学」。 */}
+            {/* 键长/键宽/键距统一由一级横栏控制；这里只保留“固定化学键”。 */}
             <span
               className="chem-subpanel__foot"
               role="group"
@@ -505,46 +454,26 @@ export function ToolModeBar() {
             >
               <button
                 type="button"
-                className={`chem-param${chem.bondLengthLocked ? ' is-active' : ''}`}
-                data-testid="bond-fixed-length"
-                aria-pressed={chem.bondLengthLocked}
-                title={`默认键长：点击锁定后，点击或拖拽绘制都按设置里的 ${Math.round(bondLength)}px；未锁定时长度跟随拖拽距离`}
+                className={`chem-param${chem.bondFixed ? ' is-active' : ''}`}
+                data-testid="bond-fixed"
+                aria-pressed={chem.bondFixed}
+                title={
+                  chem.bondFixed
+                    ? `已固定：新键严格使用 ${Math.round(bondLength)}px / ${bondWidth.toFixed(1)}px / ${bondSpacing.toFixed(1)}px，仅方向与摆放可调`
+                    : '固定化学键：开启后绘制新键只改变方向与摆放，严格使用键长 / 键宽 / 键距'
+                }
                 onClick={() => {
-                  setChemDefaults({ bondLengthLocked: !chem.bondLengthLocked });
+                  setChemDefaults({ bondFixed: !chem.bondFixed });
                   setTool('bond');
                 }}
               >
                 <span className="chem-param__lock" aria-hidden="true">
-                  <Icon name={chem.bondLengthLocked ? 'lock' : 'unlock'} size={14} />
+                  <Icon name={chem.bondFixed ? 'lock' : 'unlock'} size={14} />
                 </span>
-                <span className="chem-param__name">默认键长</span>
-                <BondParamGlyph kind="length" />
-                <b className="chem-param__value" data-testid="bond-length-value">
-                  {`${Math.round(bondLength)}px`}
-                </b>
-              </button>
-              <button
-                type="button"
-                className={`chem-param${chem.bondWidthLocked ? ' is-active' : ''}`}
-                data-testid="bond-width-lock"
-                aria-pressed={chem.bondWidthLocked}
-                title={`默认粗细：锁定后新建化学键固定用设置里的 ${bondWidth.toFixed(1)}px；未锁定时跟随左侧「大小」滑杆`}
-                onClick={() => {
-                  setChemDefaults({ bondWidthLocked: !chem.bondWidthLocked });
-                  setTool('bond');
-                }}
-              >
-                <span className="chem-param__lock" aria-hidden="true">
-                  <Icon name={chem.bondWidthLocked ? 'lock' : 'unlock'} size={14} />
+                <span className="chem-param__name">固定化学键</span>
+                <span className="chem-param__hint">
+                  {chem.bondFixed ? '仅方向 / 摆放可调' : '长度可随拖拽变化'}
                 </span>
-                <span className="chem-param__name">默认粗细</span>
-                <BondParamGlyph kind="width" />
-                <b className="chem-param__value" data-testid="bond-width-value">
-                  {`${(chem.bondWidthLocked === false
-                    ? defaultStyle.stroke.width
-                    : bondWidth
-                  ).toFixed(1)}px`}
-                </b>
               </button>
             </span>
           </div>
@@ -760,54 +689,78 @@ export function ToolModeBar() {
                 </button>
               ))}
               <span className="mode-dock__divider" />
+              <button
+                type="button"
+                className={`chem-metric-link${chem.bondUniform ? ' is-active' : ''}`}
+                data-testid="chem-bond-uniform"
+                aria-pressed={chem.bondUniform}
+                title={
+                  chem.bondUniform
+                    ? '等比联动：修改键长 / 键宽 / 键距任一参数，另外两项按同一倍率调整'
+                    : '独立参数：键长 / 键宽 / 键距分别调整'
+                }
+                onClick={() => setChemDefaults({ bondUniform: !chem.bondUniform })}
+              >
+                <Icon name={chem.bondUniform ? 'link' : 'unlink'} size={14} />
+              </button>
+              <button
+                type="button"
+                className="chem-metric-reset"
+                data-testid="chem-bond-defaults"
+                title={`恢复默认：${CHEM_BOND_LENGTH_DEFAULT} / ${CHEM_BOND_WIDTH_DEFAULT} / ${CHEM_BOND_SPACING_DEFAULT}`}
+                onClick={resetChemBondMetrics}
+              >
+                <Icon name="undo" size={13} />
+              </button>
               <label
                 className="mode-field mode-field--num chem-param-field"
-                title="后续新建化学键的默认长度（px）"
+                title={`后续新建化学键的键长（${CHEM_BOND_LENGTH_RANGE.min}–${CHEM_BOND_LENGTH_RANGE.max}px）`}
               >
                 <span>键长</span>
                 <input
                   type="number"
-                  min={16}
-                  max={120}
+                  min={CHEM_BOND_LENGTH_RANGE.min}
+                  max={CHEM_BOND_LENGTH_RANGE.max}
                   step={1}
                   data-testid="chem-bond-length"
                   value={Math.round(bondLength)}
-                  onChange={(event) => setChemBondLength(Number(event.target.value) || 40)}
+                  onChange={(event) => setChemBondMetric('length', Number(event.target.value) || CHEM_BOND_LENGTH_DEFAULT)}
                 />
                 <em>px</em>
               </label>
               <label
                 className="mode-field mode-field--num chem-param-field"
-                title="后续新建化学键的默认线宽（px）"
+                title={`后续新建化学键的键宽（${CHEM_BOND_WIDTH_RANGE.min}–${CHEM_BOND_WIDTH_RANGE.max}px）`}
               >
                 <span>键宽</span>
                 <input
                   type="number"
-                  min={0.5}
-                  max={8}
+                  min={CHEM_BOND_WIDTH_RANGE.min}
+                  max={CHEM_BOND_WIDTH_RANGE.max}
                   step={0.1}
                   data-testid="chem-bond-width"
                   value={bondWidth.toFixed(1)}
-                  onChange={(event) => {
-                    setChemBondWidth(Number(event.target.value) || 2.2);
-                    if (!chem.bondWidthLocked) setChemDefaults({ bondWidthLocked: true });
-                  }}
+                  onChange={(event) =>
+                    setChemBondMetric('width', Number(event.target.value) || CHEM_BOND_WIDTH_DEFAULT)
+                  }
                 />
                 <em>px</em>
               </label>
               <label
                 className="mode-field mode-field--num chem-param-field"
-                title="双键 / 三键平行线间距（px）；后续新建结构使用"
+                title={`双键 / 三键键距（${CHEM_BOND_SPACING_RANGE.min}–${CHEM_BOND_SPACING_RANGE.max}px）；后续新建结构使用`}
               >
                 <span>键距</span>
                 <input
                   type="number"
-                  min={1}
-                  max={16}
+                  min={CHEM_BOND_SPACING_RANGE.min}
+                  max={CHEM_BOND_SPACING_RANGE.max}
                   step={0.1}
                   data-testid="chem-bond-spacing"
                   value={bondSpacing.toFixed(1)}
-                  onChange={(event) => setChemBondSpacing(Number(event.target.value) || 4.2)}
+                  onChange={(event) =>
+                    setChemBondMetric('spacing', Number(event.target.value) || CHEM_BOND_SPACING_DEFAULT)
+                  }
                 />
                 <em>px</em>
               </label>

@@ -212,15 +212,15 @@ interface Prefs {
   autoSaveSeconds: number;
   toolShortcuts: Record<string, string>;
   chemBondType: BondType;
-  /** 新键固定使用标准键长（点击与拖拽一致）。 */
-  chemBondLengthLocked: boolean;
-  /** 默认粗细锁定：锁定后固定用设置里的粗细，未锁时跟随描边宽度滑杆。 */
-  chemBondWidthLocked: boolean;
-  /** 默认键长（页面 px），同时决定环系缩放基准。 */
+  /** 固定化学键：开启后新键只改变方向与摆放，三项参数保持当前值。 */
+  chemBondFixed: boolean;
+  /** 键长 / 键宽 / 键距等比联动。 */
+  chemBondUniform: boolean;
+  /** 化学键键长（页面 px），同时决定环系缩放基准。 */
   chemBondLength: number;
-  /** 默认键线宽。 */
+  /** 化学键键宽。 */
   chemBondWidth: number;
-  /** 双键/三键平行线间距（页面 px）。 */
+  /** 双键/三键键距（页面 px）。 */
   chemBondSpacing: number;
   chemBenzeneStyle: 'pauling' | 'kekule';
   showToolLabels: boolean;
@@ -281,14 +281,18 @@ export type ThemeMode = 'light' | 'dark' | 'system';
 
 export type UiDensity = 'compact' | 'standard' | 'comfortable';
 
-/** 化学键推荐默认值：设置里的「恢复推荐」按钮与首次使用时的初值。 */
-export const CHEM_BOND_LENGTH_RECOMMENDED = 40;
-export const CHEM_BOND_WIDTH_RECOMMENDED = 2.2;
-export const CHEM_BOND_SPACING_RECOMMENDED = 4.2;
-/** 滑杆可调范围，设置面板与状态栏提示共用。 */
-export const CHEM_BOND_LENGTH_RANGE = { min: 16, max: 120 } as const;
-export const CHEM_BOND_WIDTH_RANGE = { min: 0.5, max: 8 } as const;
-export const CHEM_BOND_SPACING_RANGE = { min: 1, max: 16 } as const;
+/** 化学键默认值：设置里的「恢复默认」与首次使用时的初值。 */
+export const CHEM_BOND_LENGTH_DEFAULT = 40;
+export const CHEM_BOND_WIDTH_DEFAULT = 2.2;
+export const CHEM_BOND_SPACING_DEFAULT = 4.2;
+/** 兼容旧命名：推荐值即默认值。 */
+export const CHEM_BOND_LENGTH_RECOMMENDED = CHEM_BOND_LENGTH_DEFAULT;
+export const CHEM_BOND_WIDTH_RECOMMENDED = CHEM_BOND_WIDTH_DEFAULT;
+export const CHEM_BOND_SPACING_RECOMMENDED = CHEM_BOND_SPACING_DEFAULT;
+/** 参数范围：按结构式绘图需要大幅放宽，设置面板与顶栏共用。 */
+export const CHEM_BOND_LENGTH_RANGE = { min: 8, max: 400 } as const;
+export const CHEM_BOND_WIDTH_RANGE = { min: 0.2, max: 40 } as const;
+export const CHEM_BOND_SPACING_RANGE = { min: 0.2, max: 100 } as const;
 
 const DEFAULT_PREFS: Prefs = {
   customTemplates: [],
@@ -306,11 +310,11 @@ const DEFAULT_PREFS: Prefs = {
   autoSaveSeconds: 15,
   toolShortcuts: {},
   chemBondType: 'single',
-  chemBondLengthLocked: false,
-  chemBondWidthLocked: true,
-  chemBondLength: CHEM_BOND_LENGTH_RECOMMENDED,
-  chemBondWidth: CHEM_BOND_WIDTH_RECOMMENDED,
-  chemBondSpacing: CHEM_BOND_SPACING_RECOMMENDED,
+  chemBondFixed: false,
+  chemBondUniform: false,
+  chemBondLength: CHEM_BOND_LENGTH_DEFAULT,
+  chemBondWidth: CHEM_BOND_WIDTH_DEFAULT,
+  chemBondSpacing: CHEM_BOND_SPACING_DEFAULT,
   chemBenzeneStyle: 'kekule',
   showToolLabels: false,
   theme: 'light',
@@ -606,6 +610,14 @@ interface AppState {
   dismissToast: (id: string) => void;
   setChem: (patch: Partial<ChemToolState>) => void;
   setChemDefaults: (patch: Partial<ChemToolState>) => void;
+  /** 修改单个化学键参数；等比联动开启时三项按同一倍率调整。 */
+  setChemBondMetric: (
+    key: 'length' | 'width' | 'spacing',
+    value: number
+  ) => void;
+  /** 恢复化学键三项默认值（40 / 2.2 / 4.2）。 */
+  resetChemBondMetrics: () => void;
+  /** 只改某一项，不影响另外两项（用于单项“默认”按钮/兼容旧入口）。 */
   setChemBondLength: (length: number) => void;
   setChemBondWidth: (width: number) => void;
   setChemBondSpacing: (spacing: number) => void;
@@ -778,22 +790,25 @@ function readPrefs(): Prefs {
       strokeJoin:
         parsed.strokeJoin === 'miter' || parsed.strokeJoin === 'bevel' ? parsed.strokeJoin : 'round',
       lineArrowEnd: Boolean(parsed.lineArrowEnd),
-      chemBondLengthLocked: Boolean(parsed.chemBondLengthLocked),
-      chemBondWidthLocked:
-        typeof parsed.chemBondWidthLocked === 'boolean'
-          ? parsed.chemBondWidthLocked
-          : DEFAULT_PREFS.chemBondWidthLocked,
+      chemBondFixed:
+        typeof parsed.chemBondFixed === 'boolean'
+          ? parsed.chemBondFixed
+          : DEFAULT_PREFS.chemBondFixed,
+      chemBondUniform:
+        typeof parsed.chemBondUniform === 'boolean'
+          ? parsed.chemBondUniform
+          : DEFAULT_PREFS.chemBondUniform,
       chemBondLength:
         typeof parsed.chemBondLength === 'number' && Number.isFinite(parsed.chemBondLength)
-          ? clamp(parsed.chemBondLength, 16, 120)
+          ? clamp(parsed.chemBondLength, CHEM_BOND_LENGTH_RANGE.min, CHEM_BOND_LENGTH_RANGE.max)
           : DEFAULT_PREFS.chemBondLength,
       chemBondWidth:
         typeof parsed.chemBondWidth === 'number' && Number.isFinite(parsed.chemBondWidth)
-          ? clamp(parsed.chemBondWidth, 0.5, 8)
+          ? clamp(parsed.chemBondWidth, CHEM_BOND_WIDTH_RANGE.min, CHEM_BOND_WIDTH_RANGE.max)
           : DEFAULT_PREFS.chemBondWidth,
       chemBondSpacing:
         typeof parsed.chemBondSpacing === 'number' && Number.isFinite(parsed.chemBondSpacing)
-          ? clamp(parsed.chemBondSpacing, 1, 16)
+          ? clamp(parsed.chemBondSpacing, CHEM_BOND_SPACING_RANGE.min, CHEM_BOND_SPACING_RANGE.max)
           : DEFAULT_PREFS.chemBondSpacing,
       // 旧偏好只有 eraserScope（全部/仅图形/仅化学），迁移到四项目标；
       // 新偏好缺字段时按"全部选中"，避免升级后橡皮静默失效。
@@ -893,8 +908,8 @@ export const useAppStore = create<AppState>((set, get) => {
     },
     chem: {
       bondType: prefs.chemBondType,
-      bondLengthLocked: prefs.chemBondLengthLocked,
-      bondWidthLocked: prefs.chemBondWidthLocked,
+      bondFixed: prefs.chemBondFixed,
+      bondUniform: prefs.chemBondUniform,
       element: 'C',
       atomPresetId: 'C',
       atomCategory: 'element',
@@ -1819,26 +1834,89 @@ export const useAppStore = create<AppState>((set, get) => {
       writePrefs({
         ...readPrefs(),
         chemBondType: chem.bondType,
-        chemBondLengthLocked: chem.bondLengthLocked,
-        chemBondWidthLocked: chem.bondWidthLocked,
+        chemBondFixed: chem.bondFixed,
+        chemBondUniform: chem.bondUniform,
         chemBenzeneStyle: chem.benzeneStyle
       });
     },
 
+    setChemBondMetric: (key, value) => {
+      const normalize = (metric: 'length' | 'width' | 'spacing', raw: number) => {
+        const range =
+          metric === 'length'
+            ? CHEM_BOND_LENGTH_RANGE
+            : metric === 'width'
+              ? CHEM_BOND_WIDTH_RANGE
+              : CHEM_BOND_SPACING_RANGE;
+        const clamped = clamp(raw, range.min, range.max);
+        return metric === 'length'
+          ? Math.round(clamped * 10) / 10
+          : Math.round(clamped * 10) / 10;
+      };
+      const state = get();
+      const normalized = normalize(key, value);
+      const current = {
+        length: state.chemBondLength,
+        width: state.chemBondWidth,
+        spacing: state.chemBondSpacing
+      };
+      if (!state.chem.bondUniform) {
+        const next = { ...current, [key]: normalized };
+        set({ chemBondLength: next.length, chemBondWidth: next.width, chemBondSpacing: next.spacing });
+        scheduleBrushPrefs({
+          chemBondLength: next.length,
+          chemBondWidth: next.width,
+          chemBondSpacing: next.spacing
+        });
+        return;
+      }
+      const factor = normalized / Math.max(0.0001, current[key]);
+      const next = {
+        length: normalize('length', current.length * factor),
+        width: normalize('width', current.width * factor),
+        spacing: normalize('spacing', current.spacing * factor)
+      };
+      // 被直接编辑的那一项以用户输入为准，避免浮点/取整导致输入值回跳。
+      next[key] = normalized;
+      set({ chemBondLength: next.length, chemBondWidth: next.width, chemBondSpacing: next.spacing });
+      scheduleBrushPrefs({
+        chemBondLength: next.length,
+        chemBondWidth: next.width,
+        chemBondSpacing: next.spacing
+      });
+    },
+
+    resetChemBondMetrics: () => {
+      set({
+        chemBondLength: CHEM_BOND_LENGTH_DEFAULT,
+        chemBondWidth: CHEM_BOND_WIDTH_DEFAULT,
+        chemBondSpacing: CHEM_BOND_SPACING_DEFAULT
+      });
+      scheduleBrushPrefs({
+        chemBondLength: CHEM_BOND_LENGTH_DEFAULT,
+        chemBondWidth: CHEM_BOND_WIDTH_DEFAULT,
+        chemBondSpacing: CHEM_BOND_SPACING_DEFAULT
+      });
+    },
+
     setChemBondLength: (length) => {
-      const value = clamp(Math.round(length * 10) / 10, 16, 120);
+      const value = clamp(Math.round(length * 10) / 10, CHEM_BOND_LENGTH_RANGE.min, CHEM_BOND_LENGTH_RANGE.max);
       set({ chemBondLength: value });
       scheduleBrushPrefs({ chemBondLength: value });
     },
 
     setChemBondWidth: (width) => {
-      const value = clamp(Math.round(width * 10) / 10, 0.5, 8);
+      const value = clamp(Math.round(width * 10) / 10, CHEM_BOND_WIDTH_RANGE.min, CHEM_BOND_WIDTH_RANGE.max);
       set({ chemBondWidth: value });
       scheduleBrushPrefs({ chemBondWidth: value });
     },
 
     setChemBondSpacing: (spacing) => {
-      const value = clamp(Math.round(spacing * 10) / 10, 1, 16);
+      const value = clamp(
+        Math.round(spacing * 10) / 10,
+        CHEM_BOND_SPACING_RANGE.min,
+        CHEM_BOND_SPACING_RANGE.max
+      );
       set({ chemBondSpacing: value });
       scheduleBrushPrefs({ chemBondSpacing: value });
     },

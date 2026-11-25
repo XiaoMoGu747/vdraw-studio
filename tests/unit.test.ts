@@ -5,8 +5,10 @@ import { GRAIN_PATH_BUDGET, brushMaterialLayers } from '../src/core/brushMateria
 import {
   bondAnchorScale,
   findBondAnchor,
+  nextChainBond,
   prevBondOrderType
 } from '../src/core/chemistry/chain';
+import { cleanupStructure } from '../src/core/chemistry/cleanup';
 import { chemistryPreviewIds } from '../src/core/chemistry/preview';
 import { createDocument, DEFAULT_STYLE } from '../src/core/document';
 import { eraseMaskDef, strokeEraseMaskDef } from '../src/core/eraseMask';
@@ -1672,6 +1674,216 @@ test('缩放：双键/三键间距与苯环内圈随缩放比例同步', () => {
     .slice(1)
     .map((segment) => Math.abs(segment.y1 - 120));
   assert.ok(childOffsets.every((offset) => Math.abs(offset - 8.4) < 0.01));
+});
+
+test('拖拽成键：指针只决定规范键角侧别，落点不再随意摆放', () => {
+  const layerId = 'layer';
+  const doc = docOf([
+    createBondObject(
+      layerId,
+      DEFAULT_STYLE,
+      { x: 100, y: 200 },
+      { x: 140, y: 200 },
+      'single'
+    )
+  ]);
+  const anchor = findBondAnchor(doc, { x: 140, y: 200 }, 3);
+  assert.ok(anchor);
+  if (!anchor) return;
+
+  const up = nextChainBond(doc, anchor, { x: 30, y: 9 }, 1, 40);
+  const down = nextChainBond(doc, anchor, { x: 30, y: -9 }, 1, 40);
+  assert.ok(up && down);
+  if (!up || !down) return;
+  assert.ok(Math.abs(up.length - 40) < 0.001);
+  // sp3 末端按 109.5° 键角展开，方向角即 180° - 109.5° = 70.5°。
+  assert.ok(Math.abs(up.angle - 70.53) < 0.5, `下方分支方向应为 70.5°，实际 ${up.angle}`);
+  assert.ok(
+    Math.abs(down.angle - 289.47) < 0.5 || Math.abs(down.angle + 70.53) < 0.5,
+    `上方分支方向应为 -70.5°，实际 ${down.angle}`
+  );
+  assert.ok(up.end.y > 200 && down.end.y < 200, '分支方向应贴合指针意图');
+});
+
+test('结构整理：规范环/链保持不变，歪斜结构按标准键长与键角重排', () => {
+  const layerId = 'layer';
+  const center = { x: 200, y: 200 };
+  const ringPoints = Array.from({ length: 6 }, (_, index) => {
+    const angle = (Math.PI / 3) * index;
+    return {
+      x: center.x + Math.cos(angle) * 40,
+      y: center.y + Math.sin(angle) * 40
+    };
+  });
+  const regularRingBonds = ringPoints.map((point, index) =>
+    createBondObject(layerId, DEFAULT_STYLE, point, ringPoints[(index + 1) % 6], 'single')
+  );
+  const regularRing = docOf(regularRingBonds);
+  const regularRingResult = cleanupStructure(regularRing);
+  assert.equal(regularRingResult.structures, 1);
+  assert.equal(regularRingResult.moved, 0);
+  assert.equal(regularRingResult.changed, 0);
+  assert.equal(regularRingResult.doc, regularRing, '规范苯环不应被改写');
+
+  const zigzag = [
+    { x: 100, y: 400 },
+    { x: 134.64, y: 420 },
+    { x: 169.28, y: 400 },
+    { x: 203.92, y: 420 }
+  ];
+  const regularChainBonds = zigzag
+    .slice(0, -1)
+    .map((point, index) =>
+      createBondObject(layerId, DEFAULT_STYLE, point, zigzag[index + 1], 'single')
+    );
+  const regularChainResult = cleanupStructure(docOf(regularChainBonds));
+  assert.equal(regularChainResult.moved, 0);
+  assert.equal(regularChainResult.changed, 0);
+
+  const distortedRingPoints = ringPoints.map((point, index) =>
+    index === 0 ? { x: point.x + 18, y: point.y - 9 } : point
+  );
+  const distortedRingBonds = distortedRingPoints.map((point, index) =>
+    createBondObject(
+      layerId,
+      DEFAULT_STYLE,
+      point,
+      distortedRingPoints[(index + 1) % 6],
+      'single'
+    )
+  );
+  const distortedRingResult = cleanupStructure(docOf(distortedRingBonds));
+  assert.equal(distortedRingResult.structures, 1);
+  assert.equal(distortedRingResult.changed, 1);
+  assert.ok(distortedRingResult.moved >= 4);
+  const fixedRing = distortedRingResult.doc.layers[0].objects.filter(
+    (object): object is BondObject => object.type === 'bond'
+  );
+  for (const bond of fixedRing) {
+    const length = Math.hypot(bond.end.x - bond.start.x, bond.end.y - bond.start.y);
+    assert.ok(Math.abs(length - 40) < 0.6, `环键应回到 40px，实际 ${length}`);
+  }
+  const fixedCenter = fixedRing.reduce(
+    (acc, bond) => ({
+      x: acc.x + (bond.start.x + bond.end.x) / 12,
+      y: acc.y + (bond.start.y + bond.end.y) / 12
+    }),
+    { x: 0, y: 0 }
+  );
+  const originalCenter = distortedRingPoints.reduce(
+    (acc, point) => ({ x: acc.x + point.x / 6, y: acc.y + point.y / 6 }),
+    { x: 0, y: 0 }
+  );
+  assert.ok(
+    Math.hypot(fixedCenter.x - originalCenter.x, fixedCenter.y - originalCenter.y) < 0.8,
+    `center=${fixedCenter.x},${fixedCenter.y} original=${originalCenter.x},${originalCenter.y}`
+  );
+
+  const distortedChain = [
+    { x: 300, y: 400 },
+    { x: 340, y: 405 },
+    { x: 378, y: 428 },
+    { x: 416, y: 430 }
+  ];
+  const chainBonds = distortedChain
+    .slice(0, -1)
+    .map((point, index) =>
+      createBondObject(layerId, DEFAULT_STYLE, point, distortedChain[index + 1], 'single')
+    );
+  const chainResult = cleanupStructure(docOf(chainBonds));
+  assert.equal(chainResult.changed, 1);
+  const fixedChain = chainResult.doc.layers[0].objects.filter(
+    (object): object is BondObject => object.type === 'bond'
+  );
+  const lengths = fixedChain.map((bond) =>
+    Math.hypot(bond.end.x - bond.start.x, bond.end.y - bond.start.y)
+  );
+  lengths.forEach((length) => assert.ok(Math.abs(length - 40) < 0.6));
+  // 中间节点键角应为 120°，链端方向与整体位置保持。
+  for (const index of [1, 2]) {
+    const previous = fixedChain[index - 1];
+    const next = fixedChain[index];
+    const vertex = next.start;
+    const first = previous.start.x === vertex.x && previous.start.y === vertex.y
+      ? previous.end
+      : previous.start;
+    const second = next.end;
+    const a = { x: first.x - vertex.x, y: first.y - vertex.y };
+    const b = { x: second.x - vertex.x, y: second.y - vertex.y };
+    const angle =
+      Math.acos(
+        Math.max(
+          -1,
+          Math.min(1, (a.x * b.x + a.y * b.y) / (Math.hypot(a.x, a.y) * Math.hypot(b.x, b.y)))
+        )
+      ) *
+      (180 / Math.PI);
+    assert.ok(Math.abs(angle - 120) < 1.5, `链键角应接近 120°，实际 ${angle}`);
+  }
+});
+
+test('结构整理：多个独立结构不冲突，规范结构全部保持原样', () => {
+  const layerId = 'layer';
+  const first = createBondObject(layerId, DEFAULT_STYLE, { x: 100, y: 100 }, { x: 140, y: 100 }, 'single');
+  const second = createBondObject(layerId, DEFAULT_STYLE, { x: 300, y: 100 }, { x: 340, y: 120 }, 'single');
+  const doc = docOf([first, second]);
+  const result = cleanupStructure(doc);
+  assert.equal(result.structures, 2);
+  assert.equal(result.moved, 0);
+  assert.equal(result.doc, doc);
+});
+
+test('结构整理：锁定图层不参与，稠环内圈圆心随骨架同步', () => {
+  const doc = createDocument('blank-landscape', '锁定');
+  const layer = doc.layers[0];
+  const center = { x: 200, y: 200 };
+  const points = Array.from({ length: 6 }, (_, index) => {
+    const angle = (Math.PI / 3) * (index + 0.35);
+    return {
+      x: center.x + Math.cos(angle) * (index === 0 ? 52 : 40),
+      y: center.y + Math.sin(angle) * (index === 0 ? 52 : 40)
+    };
+  });
+  const bonds = points.map((point, index) =>
+    createBondObject(layer.id, DEFAULT_STYLE, point, points[(index + 1) % 6], 'single')
+  );
+  const ringCenter = points.reduce(
+    (acc, point) => ({ x: acc.x + point.x / points.length, y: acc.y + point.y / points.length }),
+    { x: 0, y: 0 }
+  );
+  const group = {
+    ...createGroupObject(layer.id, '苯环', { x: 0, y: 0, width: 100, height: 100 }, bonds.map((bond) => bond.id)),
+    ringCenters: [ringCenter],
+    ringCircleStyle: 'pauling' as const
+  };
+  const grouped = { ...doc, layers: [{ ...layer, objects: [group, ...bonds] }] };
+  const result = cleanupStructure(grouped);
+  assert.equal(result.changed, 1);
+  const fixedGroup = result.doc.layers[0].objects.find(
+    (object): object is GroupObject => object.type === 'group'
+  );
+  assert.ok(fixedGroup?.ringCenters && fixedGroup.ringCenters.length === 1);
+  const fixedCenter = fixedGroup!.ringCenters![0];
+  const fixedBonds = result.doc.layers[0].objects.filter(
+    (object): object is BondObject => object.type === 'bond'
+  );
+  const expectedCenter = fixedBonds.reduce(
+    (acc, bond) => ({
+      x: acc.x + (bond.start.x + bond.end.x) / (fixedBonds.length * 2),
+      y: acc.y + (bond.start.y + bond.end.y) / (fixedBonds.length * 2)
+    }),
+    { x: 0, y: 0 }
+  );
+  assert.ok(Math.hypot(fixedCenter.x - expectedCenter.x, fixedCenter.y - expectedCenter.y) < 1);
+
+  const locked = {
+    ...grouped,
+    layers: [{ ...grouped.layers[0], locked: true }]
+  };
+  const lockedResult = cleanupStructure(locked);
+  assert.equal(lockedResult.structures, 0);
+  assert.equal(lockedResult.moved, 0);
+  assert.equal(lockedResult.doc, locked);
 });
 
 test('化学参数：自定义键距进入渲染，缩放后的结构可推导继承比例', () => {

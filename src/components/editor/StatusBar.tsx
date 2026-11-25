@@ -43,7 +43,7 @@ export function StatusBar() {
   const bondHint =
     activeTool === 'bond'
       ? `${hint} · 当前 ${BOND_TYPE_LABEL[chem.bondType]}${
-          chem.bondLengthLocked ? '（锁定默认键长）' : ''
+          chem.bondFixed ? '（固定化学键）' : ''
         }`
       : hint;
 
