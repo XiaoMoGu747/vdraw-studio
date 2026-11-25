@@ -189,6 +189,8 @@ function BondParamGlyph({ kind }: { kind: 'length' | 'width' }) {
 
 /** 横栏比可视宽度长时，鼠标滚轮也能横向滑动（不必去拖底部细滚动条）。 */
 function scrollDockHorizontally(event: ReactWheelEvent<HTMLDivElement>) {
+  // 横栏在画布视口内部：滚轮只用于横向浏览，不能再冒泡成画布缩放。
+  event.stopPropagation();
   const el = event.currentTarget;
   if (el.scrollWidth <= el.clientWidth + 1) return;
   const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
@@ -212,6 +214,10 @@ export function ToolModeBar() {
   // 数值来自「设置 → 化学」，这里只展示，避免二处配置各说各话。
   const bondLength = useAppStore((state) => state.chemBondLength);
   const bondWidth = useAppStore((state) => state.chemBondWidth);
+  const bondSpacing = useAppStore((state) => state.chemBondSpacing);
+  const setChemBondLength = useAppStore((state) => state.setChemBondLength);
+  const setChemBondWidth = useAppStore((state) => state.setChemBondWidth);
+  const setChemBondSpacing = useAppStore((state) => state.setChemBondSpacing);
   const defaultStyle = useAppStore((state) => state.defaultStyle);
   const symmetry = useAppStore((state) => state.symmetry);
   const setSymmetry = useAppStore((state) => state.setSymmetry);
@@ -753,6 +759,58 @@ export function ToolModeBar() {
                   {label}
                 </button>
               ))}
+              <span className="mode-dock__divider" />
+              <label
+                className="mode-field mode-field--num chem-param-field"
+                title="后续新建化学键的默认长度（px）"
+              >
+                <span>键长</span>
+                <input
+                  type="number"
+                  min={16}
+                  max={120}
+                  step={1}
+                  data-testid="chem-bond-length"
+                  value={Math.round(bondLength)}
+                  onChange={(event) => setChemBondLength(Number(event.target.value) || 40)}
+                />
+                <em>px</em>
+              </label>
+              <label
+                className="mode-field mode-field--num chem-param-field"
+                title="后续新建化学键的默认线宽（px）"
+              >
+                <span>键宽</span>
+                <input
+                  type="number"
+                  min={0.5}
+                  max={8}
+                  step={0.1}
+                  data-testid="chem-bond-width"
+                  value={bondWidth.toFixed(1)}
+                  onChange={(event) => {
+                    setChemBondWidth(Number(event.target.value) || 2.2);
+                    if (!chem.bondWidthLocked) setChemDefaults({ bondWidthLocked: true });
+                  }}
+                />
+                <em>px</em>
+              </label>
+              <label
+                className="mode-field mode-field--num chem-param-field"
+                title="双键 / 三键平行线间距（px）；后续新建结构使用"
+              >
+                <span>键距</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={16}
+                  step={0.1}
+                  data-testid="chem-bond-spacing"
+                  value={bondSpacing.toFixed(1)}
+                  onChange={(event) => setChemBondSpacing(Number(event.target.value) || 4.2)}
+                />
+                <em>px</em>
+              </label>
               <span className="mode-dock__divider" />
               <button
                 type="button"

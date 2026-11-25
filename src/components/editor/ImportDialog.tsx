@@ -568,7 +568,11 @@ export function ImportDialog() {
                 </button>
               </div>
             </div>
-            <ul className="import-batch__list">
+            <ul
+              className="import-batch__list"
+              data-testid="import-batch-list"
+              onWheel={(event) => event.stopPropagation()}
+            >
               {entries.map((entry) => {
                 const active = entry.id === activeEntry?.id;
                 return (

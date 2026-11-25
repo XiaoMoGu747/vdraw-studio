@@ -10,6 +10,7 @@ import type {
 import { distance, normalize, sub } from '../geometry';
 import { allObjects, distanceToSegment, getLayerOfObject, getObject, getObjectBounds } from '../scene';
 import { groupRingBonds, ringGeometry } from './ring-geometry';
+import { ATOM_FONT_SIZE } from './labels';
 import { maxValenceFor } from './valence';
 import {
   bondingState,
@@ -66,6 +67,21 @@ export interface ChainBondGeometry {
   /** 与 x 轴正方向的夹角（度） */
   angle: number;
   length: number;
+}
+
+/**
+ * 锚点所在结构式的等比缩放：优先原子字号，其次环编组缩放，最后取相连键的 scale。
+ * 新增键/原子用它继承已缩放结构的大小。
+ */
+export function bondAnchorScale(anchor: BondAnchor): number {
+  const values: number[] = [];
+  if (anchor.atom?.label.fontSize) values.push(anchor.atom.label.fontSize / ATOM_FONT_SIZE);
+  if (anchor.group?.ringScale) values.push(anchor.group.ringScale);
+  for (const bond of anchor.bonds) {
+    if (typeof bond.scale === 'number' && bond.scale > 0) values.push(bond.scale);
+  }
+  if (values.length === 0) return 1;
+  return Math.min(8, Math.max(0.05, Math.max(...values)));
 }
 
 export function bondsTouching(doc: VDrawDocument, point: Vec, eps = TOUCH_EPS): BondObject[] {

@@ -42,7 +42,11 @@ export function ToolRail() {
     }
     // 形状工具面板是独立工具面板：切换到画笔/选择等工具时不主动收起，
     // 用户再次点击形状选项即可继续绘制。只有显式“关闭”或进入化学面板才收起。
-    if (useAppStore.getState().toolPanel !== 'shape') setToolPanel(null);
+    // 化学横栏例外：点「选择」只切换操作模式，横向面板保留，方便选中后继续画。
+    const currentPanel = useAppStore.getState().toolPanel;
+    if (currentPanel !== 'shape' && !(currentPanel === 'chem' && entry.tool === 'select')) {
+      setToolPanel(null);
+    }
     // 对称 / 辅助线互不影响；再次点击辅助线工具时确保绘画吸附开启
     if (entry.key === 'symmetry' && symmetry === 'none') setSymmetry('vertical');
     if (entry.key === 'guides') setGuideMode(guideMode === 'none' ? 'one-point' : guideMode);

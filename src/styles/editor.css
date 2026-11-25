@@ -832,6 +832,7 @@
 
 .modal--import .modal__body {
   max-height: 74vh;
+  overscroll-behavior: contain;
 }
 
 .import-dialog {
@@ -1118,11 +1119,14 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  max-height: 150px;
+  max-height: 180px;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .import-batch__item {
+  flex: none;
   display: flex;
   flex-wrap: wrap;
   border: 1px solid var(--border);
@@ -3094,6 +3098,17 @@ html[data-rail-labels='true'] .rail-btn::after {
   scrollbar-color: var(--border-2) transparent;
 }
 
+/* 化学键长/宽/距要在一级横栏内和六个分类同时放得下：收紧分类按钮。 */
+.mode-dock--chem > .mode-dock__item {
+  padding: 0 6px;
+  gap: 4px;
+  font-size: var(--fs-xs);
+}
+
+.mode-dock--chem > .mode-dock__divider {
+  margin: 0 2px;
+}
+
 .mode-dock--chem::-webkit-scrollbar {
   height: 6px;
 }
@@ -3429,6 +3444,20 @@ html[data-rail-labels='true'] .rail-btn::after {
 
 .mode-field--num input[type='number'] {
   width: 54px;
+}
+
+/* 一级化学横栏的空间有限：键长/键宽/键距压缩输入框，单位由 title 说明。 */
+.chem-param-field {
+  gap: 2px;
+}
+
+.chem-param-field input[type='number'] {
+  width: 40px;
+  padding: 0 2px;
+}
+
+.chem-param-field em {
+  display: none;
 }
 
 .mode-field--color input[type='color'] {

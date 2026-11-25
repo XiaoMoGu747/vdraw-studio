@@ -4,6 +4,8 @@ import { TOOLS } from '../../core/tools';
 import {
   CHEM_BOND_LENGTH_RANGE,
   CHEM_BOND_LENGTH_RECOMMENDED,
+  CHEM_BOND_SPACING_RANGE,
+  CHEM_BOND_SPACING_RECOMMENDED,
   CHEM_BOND_WIDTH_RANGE,
   CHEM_BOND_WIDTH_RECOMMENDED,
   useAppStore
@@ -104,8 +106,10 @@ export function SettingsModal() {
   const setChem = useAppStore((state) => state.setChemDefaults);
   const chemBondLength = useAppStore((state) => state.chemBondLength);
   const chemBondWidth = useAppStore((state) => state.chemBondWidth);
+  const chemBondSpacing = useAppStore((state) => state.chemBondSpacing);
   const setChemBondLength = useAppStore((state) => state.setChemBondLength);
   const setChemBondWidth = useAppStore((state) => state.setChemBondWidth);
+  const setChemBondSpacing = useAppStore((state) => state.setChemBondSpacing);
   const fileActions = useFileActions();
   const [tab, setTab] = useState<SettingsTab>('interface');
   const [saveDir, setSaveDir] = useState('');
@@ -493,6 +497,39 @@ export function SettingsModal() {
                     onClick={() => setChemBondWidth(CHEM_BOND_WIDTH_RECOMMENDED)}
                   >
                     推荐 {CHEM_BOND_WIDTH_RECOMMENDED.toFixed(1)}px
+                  </button>
+                </div>
+              </label>
+              <label className="settings-field">
+                <span>
+                  <strong>双键 / 三键间距</strong>
+                  <em>
+                    新建双键、三键与芳香内线的平行线间距（推荐{' '}
+                    {CHEM_BOND_SPACING_RECOMMENDED.toFixed(1)}px）
+                  </em>
+                </span>
+                <div className="settings-range">
+                  <input
+                    type="range"
+                    min={CHEM_BOND_SPACING_RANGE.min}
+                    max={CHEM_BOND_SPACING_RANGE.max}
+                    step={0.1}
+                    value={chemBondSpacing}
+                    data-testid="settings-bond-spacing"
+                    onChange={(event) => setChemBondSpacing(Number(event.target.value))}
+                  />
+                  <b>{chemBondSpacing.toFixed(1)}px</b>
+                  <button
+                    type="button"
+                    className="settings-range__reset"
+                    data-testid="settings-bond-spacing-reset"
+                    disabled={
+                      Math.abs(chemBondSpacing - CHEM_BOND_SPACING_RECOMMENDED) < 0.01
+                    }
+                    title={`恢复推荐键距 ${CHEM_BOND_SPACING_RECOMMENDED.toFixed(1)}px`}
+                    onClick={() => setChemBondSpacing(CHEM_BOND_SPACING_RECOMMENDED)}
+                  >
+                    推荐 {CHEM_BOND_SPACING_RECOMMENDED.toFixed(1)}px
                   </button>
                 </div>
               </label>

@@ -56,6 +56,7 @@ import {
   makeNode
 } from '../../core/factory';
 import { BOND_TYPE_LABEL, ATOM_PRESETS } from '../../core/chemistry/presets';
+import { ATOM_FONT_SIZE } from '../../core/chemistry/labels';
 import { SHAPE_TOOL_IDS, TOOL_MAP, brushPresetOf } from '../../core/tools';
 import {
   brushOutlineData,
@@ -68,6 +69,7 @@ import {
   attachBondToGroup,
   attachObjectsToGroup,
   bondExistsBetween,
+  bondAnchorScale,
   bondOrderForType,
   findBondAnchor,
   findBondAt,
@@ -75,9 +77,9 @@ import {
   nearestRingAnchor,
   nextBondOrderType,
   nextChainBond,
-  validateBondUpgrade
+  validateBondUpgrade,
+  type BondAnchor
 } from '../../core/chemistry/chain';
-import type { BondAnchor } from '../../core/chemistry/chain';
 import { eraseAlongPath, findErasableAt, type EraserTargets } from '../../core/eraser';
 import { validateStructure, type ChemIssue } from '../../core/chemistry/valence';
 import { buildRegionFill } from '../../core/regionRaster';
@@ -102,6 +104,7 @@ import { benzeneBondTypes, CHEM_GROUP_STYLE, isBenzeneGroup } from '../../core/c
 import { pathData } from '../../core/io/svg';
 import type {
   AtomLabelData,
+  AtomObject,
   BondObject,
   GroupObject,
   GuideMode,
@@ -181,6 +184,44 @@ function currentEraseTargets(): EraserTargets {
 
 /** 单笔采样上限：超过后隔点压缩，避免极长笔迹把内存与落笔耗时无限拉高。 */
 const MAX_BRUSH_SAMPLES = 24000;
+
+/**
+ * 新建化学键：把设置里的键距写进对象，并记录继承自所在结构/锚点的缩放倍率。
+ * 旧对象没有 spacing，渲染层按 4.2 兼容。
+ */
+function makeChemBond(
+  layerId: string,
+  start: Vec,
+  end: Vec,
+  bondType: BondObject['bondType'],
+  scale = 1,
+  aromaticSide?: 1 | -1
+): BondObject {
+  const state = useAppStore.getState();
+  return {
+    ...createBondObject(layerId, chemBondStyle(), start, end, bondType, aromaticSide),
+    scale,
+    spacing: state.chemBondSpacing
+  };
+}
+
+/** 空锚点视为标准比例，便于各成键路径统一调用。 */
+function chemAnchorScale(anchor: BondAnchor | null): number {
+  return anchor ? bondAnchorScale(anchor) : 1;
+}
+
+/** 新建原子标签：字号随所在结构一起缩放，避免缩放后的结构上贴出“小字”。 */
+function makeChemAtom(
+  layerId: string,
+  position: Vec,
+  label: AtomLabelData,
+  scale = 1
+): AtomObject {
+  return createAtomObject(layerId, CHEM_ATOM_STYLE, position, {
+    ...label,
+    fontSize: Math.max(8, (label.fontSize ?? ATOM_FONT_SIZE) * scale)
+  });
+}
 
 const CHEM_ARROW_STYLE: Style = {
   fill: { type: 'none' },
@@ -1425,18 +1466,16 @@ export function CanvasStage() {
     const element = viewportRef.current;
     if (!element) return;
     const handleWheel = (event: WheelEvent) => {
+      // 底部工具横栏/缩放坞自己处理滚轮（横向浏览），不要再缩放画布。
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('.mode-dock, .zoom-dock')) return;
       event.preventDefault();
-      // 绘制/拖拽过程中禁止缩放平移：视口一变，进行中的笔迹坐标就会跳变。
+      // 绘制/拖拽过程中禁止缩放：视口一变，进行中的笔迹坐标就会跳变。
       if (dragRef.current || panRef.current) return;
       const rect = element.getBoundingClientRect();
-      if (event.ctrlKey || event.metaKey) {
-        // Ctrl/⌘ + 滚轮（含触控板捏合）= 缩放
-        const factor = Math.exp(-event.deltaY * 0.0016);
-        zoomAt(factor, { x: event.clientX - rect.left, y: event.clientY - rect.top });
-        return;
-      }
-      // 普通滚轮 / 触控板双指滑动 = 平移，与主流绘图软件一致
-      panBy(-event.deltaX, -event.deltaY);
+      // 单滚轮直接缩放；Ctrl/⌘ + 滚轮（触控板捏合）仍保持同一行为。
+      const factor = Math.exp(-event.deltaY * 0.0016);
+      zoomAt(factor, { x: event.clientX - rect.left, y: event.clientY - rect.top });
     };
     element.addEventListener('wheel', handleWheel, { passive: false });
     return () => element.removeEventListener('wheel', handleWheel);
@@ -2252,6 +2291,7 @@ export function CanvasStage() {
     const label = atomLabelFromChem(state.chem);
     // 吸附到最近的原子或键端点，保证标签与化学键严格对齐
     const anchor = findBondAnchor(state.doc, point, 12 / zoom);
+    const anchorScale = chemAnchorScale(anchor);
 
     // 官能团（OH / NH₂ / COOH…）与氢原子作为取代基挂接，绝不替换环骨架原子
     if ((preset.kind === 'group' || preset.element === 'H') && anchor) {
@@ -2263,7 +2303,13 @@ export function CanvasStage() {
         state.notify('该位置已有氢原子', 'info');
         return;
       }
-      const geometry = nextChainBond(state.doc, anchor, null, 1, state.chemBondLength);
+      const geometry = nextChainBond(
+        state.doc,
+        anchor,
+        null,
+        1,
+        state.chemBondLength * anchorScale
+      );
       if (!geometry) {
         state.notify(
           `${anchor.element} 原子已无剩余化合价，无法连接${preset.display}`,
@@ -2275,14 +2321,14 @@ export function CanvasStage() {
         state.notify('该位置已存在化学键', 'warn');
         return;
       }
-      const bond = createBondObject(
+      const bond = makeChemBond(
         layer.id,
-        chemBondStyle(),
         geometry.start,
         geometry.end,
-        'single'
+        'single',
+        anchorScale
       );
-      const atom = createAtomObject(layer.id, CHEM_ATOM_STYLE, geometry.end, label);
+      const atom = makeChemAtom(layer.id, geometry.end, label, anchorScale);
       if (anchor.group) {
         const attached = attachObjectsToGroup(state.doc, anchor.group.id, [bond, atom]);
         if (attached) {
@@ -2312,7 +2358,8 @@ export function CanvasStage() {
                   isotope: existing.label.isotope,
                   radical: existing.label.radical,
                   lonePairs: existing.label.lonePairs,
-                  hydrogens: existing.label.hydrogens
+                  hydrogens: existing.label.hydrogens,
+                  fontSize: existing.label.fontSize
                 }
               }
             : obj
@@ -2322,7 +2369,7 @@ export function CanvasStage() {
       state.setSelection([existing.id]);
       return;
     }
-    const atom = createAtomObject(layer.id, CHEM_ATOM_STYLE, target, label);
+    const atom = makeChemAtom(layer.id, target, label, anchorScale);
     if (anchor?.group) {
       // 环上的原子标签并入环编组，移动环时标签跟随
       const attached = attachObjectsToGroup(state.doc, anchor.group.id, [atom]);
@@ -2431,12 +2478,12 @@ export function CanvasStage() {
           : -1;
       const bondType = overrideTypes?.[index] ?? bond.type;
       children.push({
-        ...createBondObject(
+        ...makeChemBond(
           layer.id,
-          chemBondStyle(),
           start,
           end,
           bondType,
+          1,
           isBenzene ? undefined : side
         ),
         parentId: group.id,
@@ -2446,7 +2493,7 @@ export function CanvasStage() {
     template.atoms.forEach((atom, index) => {
       if (!atom.label) return;
       children.push({
-        ...createAtomObject(layer.id, CHEM_ATOM_STYLE, points[index], emptyAtomLabel(atom.label)),
+        ...makeChemAtom(layer.id, points[index], emptyAtomLabel(atom.label), 1),
         parentId: group.id
       });
     });
@@ -2456,12 +2503,12 @@ export function CanvasStage() {
         return index >= 0 ? index : 0;
       })();
       children.push({
-        ...createBondObject(
+        ...makeChemBond(
           layer.id,
-          chemBondStyle(),
           options.anchorPoint,
           points[carbonIndex],
-          'single'
+          'single',
+          1
         ),
         parentId: group.id
       });
@@ -2558,7 +2605,7 @@ export function CanvasStage() {
           : -1;
       const bondType = bondTypes[index];
       newChildren.push({
-        ...createBondObject(layer.id, chemBondStyle(), start, end, bondType),
+        ...makeChemBond(layer.id, start, end, bondType, 1),
         parentId: '',
         ringInnerSide: bondType === 'double' ? side : undefined
       });
@@ -2773,8 +2820,9 @@ export function CanvasStage() {
           : hasN
             ? Math.max(0.02, (anchor.y - target.y) / Math.max(1, bounds.height))
             : 1;
-      // Shift：角手柄等比缩放（取变化更大的轴作为统一因子，锚点不变）。
-      if (shift && (hasE || hasW) && (hasN || hasS)) {
+      // 角手柄始终等比缩放：长宽共用变化更大的轴作为统一因子，锚点不变。
+      // 边手柄仍只改一个方向，保留自由拉伸。
+      if ((hasE || hasW) && (hasN || hasS)) {
         const uniform = Math.abs(sx - 1) >= Math.abs(sy - 1) ? sx : sy;
         sx = uniform;
         sy = uniform;
@@ -2964,6 +3012,12 @@ export function CanvasStage() {
       const layer = drawLayer(state.doc);
       if (!layer) return;
       const tolerance = 11 / currentZoom;
+      const startAnchor =
+        drag.mode === 'bond'
+          ? findBondAnchor(state.doc, drag.origin, 10 / currentZoom)
+          : null;
+      const startScale = chemAnchorScale(startAnchor);
+      const baseLength = state.chemBondLength * startScale;
       let end = findConnection(state.doc, point, tolerance) ?? point;
       if (end === point) {
         if (state.snapEnabled && !alt) {
@@ -2978,11 +3032,14 @@ export function CanvasStage() {
             const step = Math.PI / 12;
             let snappedAngle = Math.round(angle / step) * step;
             let snappedLength = length;
-            const ideal = Math.round(length / state.chemBondLength) * state.chemBondLength;
+            const ideal = Math.round(length / baseLength) * baseLength;
             if (Math.abs(length - ideal) < 8) snappedLength = ideal;
-            // 默认键长：预览与落笔长度一致，都锁定为标准键长。
-            if (drag.mode === 'bond' && state.chem.bondLengthLocked) {
-              snappedLength = state.chemBondLength;
+            // 默认键长：预览与落笔长度一致；从已缩放结构延伸时也沿用同一比例。
+            if (
+              drag.mode === 'bond' &&
+              (state.chem.bondLengthLocked || startScale !== 1)
+            ) {
+              snappedLength = baseLength;
             }
             if (drag.mode === 'arrow' && shift) snappedAngle = angle;
             end = {
@@ -2994,7 +3051,13 @@ export function CanvasStage() {
       }
       if (drag.mode === 'bond') {
         setPreview(
-          createBondObject(layer.id, chemBondStyle(), drag.origin, end, state.chem.bondType)
+          makeChemBond(
+            layer.id,
+            drag.origin,
+            end,
+            state.chem.bondType,
+            startScale
+          )
         );
       } else {
         setPreview(
@@ -3968,6 +4031,7 @@ export function CanvasStage() {
     let limitAnchor: BondAnchor | null = directTarget;
     const requestedType = state.chem.bondType;
     const requestedOrder = bondOrderForType(requestedType);
+    const anchorScale = chemAnchorScale(anchor);
     const plannedOrder = Math.max(
       1,
       Math.min(requestedOrder, maxNewBondOrderForAnchor(anchor))
@@ -3985,7 +4049,7 @@ export function CanvasStage() {
         anchor,
         preferred,
         plannedOrder,
-        state.chemBondLength
+        state.chemBondLength * anchorScale
       );
       if (!geometry) {
         state.notify(`${anchor.element} 原子已无剩余化合价，无法继续成键`, 'warn');
@@ -3996,12 +4060,13 @@ export function CanvasStage() {
         geometry.end.y - geometry.start.y
       );
       const dragLength = Math.hypot(preferred.x, preferred.y);
-      // 默认键长开启时忽略拖拽距离，统一回落到标准键长（与单击成键一致）。
-      const length = state.chem.bondLengthLocked
-        ? baseLength
-        : dragLength > 24 && dragLength < 180
-          ? dragLength
-          : baseLength;
+      // 默认键长开启时忽略拖拽距离；已缩放结构也沿用同一比例。
+      const length =
+        state.chem.bondLengthLocked || anchorScale !== 1
+          ? baseLength
+          : dragLength > 24 && dragLength < 180
+            ? dragLength
+            : baseLength;
       const direction =
         baseLength > 0.001
           ? {
@@ -4085,12 +4150,12 @@ export function CanvasStage() {
       );
     }
 
-    const bond = createBondObject(
+    const bond = makeChemBond(
       layer.id,
-      chemBondStyle(),
       anchor.point,
       endPoint,
-      bondType
+      bondType,
+      anchorScale
     );
     const crossGroup =
       Boolean(anchor.group && directTarget?.group) &&
@@ -4182,6 +4247,7 @@ export function CanvasStage() {
         nearestRingAnchor(state.doc, point);
       const anchor = originAnchor ?? targetAnchor;
       if (anchor) {
+        const anchorScale = chemAnchorScale(anchor);
         const anchorLimit = maxNewBondOrderForAnchor(anchor);
         const requestedOrder = bondOrderForType(state.chem.bondType);
         const plannedOrder = Math.max(1, Math.min(requestedOrder, anchorLimit));
@@ -4215,12 +4281,12 @@ export function CanvasStage() {
               'info'
             );
           }
-          const bond = createBondObject(
+          const bond = makeChemBond(
             layer.id,
-            chemBondStyle(),
             anchor.point,
             directTarget.point,
-            bondType
+            bondType,
+            Math.max(anchorScale, chemAnchorScale(directTarget))
           );
           if (anchor.group) {
             const attached = attachBondToGroup(state.doc, anchor.group.id, bond);
@@ -4243,7 +4309,7 @@ export function CanvasStage() {
           anchor,
           preferred,
           plannedOrder,
-          state.chemBondLength
+          state.chemBondLength * anchorScale
         );
         if (!geometry) {
           state.notify(`${anchor.element} 原子已无剩余化合价，无法继续成键`, 'warn');
@@ -4273,12 +4339,12 @@ export function CanvasStage() {
             'info'
           );
         }
-        const bond = createBondObject(
+        const bond = makeChemBond(
           layer.id,
-          chemBondStyle(),
           geometry.start,
           target,
-          bondType
+          bondType,
+          anchorScale
         );
         if (anchor.group) {
           // 苯环上长出的取代基并入环编组，随环一起移动/旋转
@@ -4295,9 +4361,8 @@ export function CanvasStage() {
 
       // 3) 空白处点击：沿用标准键长的默认方向
       addWithSymmetry([
-        createBondObject(
+        makeChemBond(
           layer.id,
-          chemBondStyle(),
           drag.origin,
           { x: drag.origin.x + state.chemBondLength, y: drag.origin.y },
           state.chem.bondType
@@ -4307,6 +4372,9 @@ export function CanvasStage() {
     }
 
     const connection = findConnection(state.doc, point, tolerance);
+    const startAnchor = findBondAnchor(state.doc, drag.origin, 6);
+    const startScale = drag.mode === 'bond' ? chemAnchorScale(startAnchor) : 1;
+    const baseBondLength = state.chemBondLength * startScale;
     let end = connection ?? point;
     if (!connection) {
       if (state.snapEnabled && !shift) {
@@ -4321,7 +4389,7 @@ export function CanvasStage() {
           const step = Math.PI / 12;
           const snappedAngle = Math.round(angle / step) * step;
           let snappedLength = length;
-          const ideal = Math.round(length / state.chemBondLength) * state.chemBondLength;
+          const ideal = Math.round(length / baseBondLength) * baseBondLength;
           if (Math.abs(length - ideal) < 8) snappedLength = ideal;
           end = {
             x: drag.origin.x + Math.cos(snappedAngle) * snappedLength,
@@ -4334,21 +4402,23 @@ export function CanvasStage() {
       // 箭头在空白处单击时使用固定长度
       end = { x: drag.origin.x + 64, y: drag.origin.y };
     }
-    if (drag.mode === 'bond' && state.chem.bondLengthLocked) {
-      // 默认键长：拖拽只决定方向，长度一律回落到标准键长（Shift 也不放开）。
+    if (
+      drag.mode === 'bond' &&
+      (state.chem.bondLengthLocked || startScale !== 1)
+    ) {
+      // 默认键长：拖拽只决定方向，长度一律回落到标准键长；已缩放结构沿用同一比例。
       const dx = end.x - drag.origin.x;
       const dy = end.y - drag.origin.y;
       const length = Math.hypot(dx, dy);
       if (length > 1) {
         end = {
-          x: drag.origin.x + (dx / length) * state.chemBondLength,
-          y: drag.origin.y + (dy / length) * state.chemBondLength
+          x: drag.origin.x + (dx / length) * baseBondLength,
+          y: drag.origin.y + (dy / length) * baseBondLength
         };
       }
     }
     if (drag.mode === 'bond') {
       if (connection && Math.hypot(end.x - drag.origin.x, end.y - drag.origin.y) < 6) return;
-      const startAnchor = findBondAnchor(state.doc, drag.origin, 6);
       const endAnchor = connection ? findBondAnchor(state.doc, connection, 3) : null;
       const bondType = state.chem.bondType;
       const order = bondOrderForType(bondType);
@@ -4361,7 +4431,7 @@ export function CanvasStage() {
         return;
       }
       addWithSymmetry([
-        createBondObject(layer.id, chemBondStyle(), drag.origin, end, bondType)
+        makeChemBond(layer.id, drag.origin, end, bondType, startScale)
       ]);
     } else {
       addWithSymmetry([

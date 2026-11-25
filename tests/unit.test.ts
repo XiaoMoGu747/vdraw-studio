@@ -2,7 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { pressureScale, strokeWidths, taperLengthFor } from '../src/core/brush';
 import { GRAIN_PATH_BUDGET, brushMaterialLayers } from '../src/core/brushMaterial';
-import { prevBondOrderType } from '../src/core/chemistry/chain';
+import {
+  bondAnchorScale,
+  findBondAnchor,
+  prevBondOrderType
+} from '../src/core/chemistry/chain';
 import { chemistryPreviewIds } from '../src/core/chemistry/preview';
 import { createDocument, DEFAULT_STYLE } from '../src/core/document';
 import { eraseMaskDef, strokeEraseMaskDef } from '../src/core/eraseMask';
@@ -1668,4 +1672,59 @@ test('缩放：双键/三键间距与苯环内圈随缩放比例同步', () => {
     .slice(1)
     .map((segment) => Math.abs(segment.y1 - 120));
   assert.ok(childOffsets.every((offset) => Math.abs(offset - 8.4) < 0.01));
+});
+
+test('化学参数：自定义键距进入渲染，缩放后的结构可推导继承比例', () => {
+  const doc = createDocument('blank-landscape', '化学参数');
+  const layer = doc.layers[0];
+  const bond = {
+    ...createBondObject(
+      layer.id,
+      DEFAULT_STYLE,
+      { x: 100, y: 100 },
+      { x: 180, y: 100 },
+      'double'
+    ),
+    scale: 2,
+    spacing: 6
+  };
+  const bondDoc = { ...doc, layers: [{ ...layer, objects: [bond] }] };
+  const shape = chemBondShape(bondDoc, bond);
+  const offsets = shape.geometry.segments
+    .slice(1)
+    .map((segment) => Math.abs(segment.y1 - 100));
+  assert.ok(offsets.length > 0);
+  assert.ok(offsets.every((offset) => Math.abs(offset - 12) < 0.01));
+
+  // 已缩放链：相连键的 scale 与原子字号都能告诉新增对象该继承多少。
+  const atom = {
+    ...createAtomObject(layer.id, DEFAULT_STYLE, { x: 180, y: 100 }, {
+      ...emptyAtomLabel('C'),
+      fontSize: 32
+    })
+  };
+  const chainDoc = { ...doc, layers: [{ ...layer, objects: [bond, atom] }] };
+  const anchor = findBondAnchor(chainDoc, { x: 180, y: 100 }, 3);
+  assert.ok(anchor);
+  if (!anchor) return;
+  assert.equal(bondAnchorScale(anchor), 2);
+
+  const scaledBondOnly = { ...bond, parentId: null };
+  const group = {
+    ...createGroupObject(layer.id, '苯环', { x: 0, y: 0, width: 80, height: 40 }, [
+      scaledBondOnly.id
+    ]),
+    ringStyle: 'pauling' as const,
+    ringScale: 2
+  };
+  const bondInGroup = { ...scaledBondOnly, parentId: group.id };
+  const groupDoc = {
+    ...doc,
+    layers: [{ ...layer, objects: [group, bondInGroup] }]
+  };
+  const groupAnchor = findBondAnchor(groupDoc, { x: 100, y: 100 }, 3);
+  assert.ok(groupAnchor);
+  if (!groupAnchor) return;
+  assert.equal(groupAnchor.group?.id, group.id);
+  assert.equal(bondAnchorScale(groupAnchor), 2);
 });

@@ -294,6 +294,8 @@ export interface BondObject extends SceneObjectBase {
   end: Vec;
   /** 缩放倍率：双键/三键的平行线间距随之同步缩放；旧文件缺省为 1。 */
   scale?: number;
+  /** 创建时的平行线基础间距；缺省为 4.2，旧文件按历史默认渲染。 */
+  spacing?: number;
   /** 芳香键内侧线方向，由所在环的质心决定 */
   aromaticSide?: 1 | -1;
   /** 环内双键的第二条线方向（凯库勒式苯环），指向环心 */

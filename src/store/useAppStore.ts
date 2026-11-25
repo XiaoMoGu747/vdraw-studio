@@ -220,6 +220,8 @@ interface Prefs {
   chemBondLength: number;
   /** 默认键线宽。 */
   chemBondWidth: number;
+  /** 双键/三键平行线间距（页面 px）。 */
+  chemBondSpacing: number;
   chemBenzeneStyle: 'pauling' | 'kekule';
   showToolLabels: boolean;
   theme: ThemeMode;
@@ -282,9 +284,11 @@ export type UiDensity = 'compact' | 'standard' | 'comfortable';
 /** 化学键推荐默认值：设置里的「恢复推荐」按钮与首次使用时的初值。 */
 export const CHEM_BOND_LENGTH_RECOMMENDED = 40;
 export const CHEM_BOND_WIDTH_RECOMMENDED = 2.2;
+export const CHEM_BOND_SPACING_RECOMMENDED = 4.2;
 /** 滑杆可调范围，设置面板与状态栏提示共用。 */
 export const CHEM_BOND_LENGTH_RANGE = { min: 16, max: 120 } as const;
 export const CHEM_BOND_WIDTH_RANGE = { min: 0.5, max: 8 } as const;
+export const CHEM_BOND_SPACING_RANGE = { min: 1, max: 16 } as const;
 
 const DEFAULT_PREFS: Prefs = {
   customTemplates: [],
@@ -306,6 +310,7 @@ const DEFAULT_PREFS: Prefs = {
   chemBondWidthLocked: true,
   chemBondLength: CHEM_BOND_LENGTH_RECOMMENDED,
   chemBondWidth: CHEM_BOND_WIDTH_RECOMMENDED,
+  chemBondSpacing: CHEM_BOND_SPACING_RECOMMENDED,
   chemBenzeneStyle: 'kekule',
   showToolLabels: false,
   theme: 'light',
@@ -429,6 +434,8 @@ interface AppState {
   chemBondLength: number;
   /** 新建化学键的默认线宽。 */
   chemBondWidth: number;
+  /** 新建双键/三键的平行线间距。 */
+  chemBondSpacing: number;
   recent: RecentEntry[];
   /** 启动页「快捷模板」中的自定义尺寸。 */
   customTemplates: CanvasPreset[];
@@ -601,6 +608,7 @@ interface AppState {
   setChemDefaults: (patch: Partial<ChemToolState>) => void;
   setChemBondLength: (length: number) => void;
   setChemBondWidth: (width: number) => void;
+  setChemBondSpacing: (spacing: number) => void;
   /** 在对象列表内复制单个对象（含编组子对象），并选中新副本。 */
   duplicateObject: (id: string) => void;
   /** 删除单个对象；原子被删时连带清理相连的键。 */
@@ -783,6 +791,10 @@ function readPrefs(): Prefs {
         typeof parsed.chemBondWidth === 'number' && Number.isFinite(parsed.chemBondWidth)
           ? clamp(parsed.chemBondWidth, 0.5, 8)
           : DEFAULT_PREFS.chemBondWidth,
+      chemBondSpacing:
+        typeof parsed.chemBondSpacing === 'number' && Number.isFinite(parsed.chemBondSpacing)
+          ? clamp(parsed.chemBondSpacing, 1, 16)
+          : DEFAULT_PREFS.chemBondSpacing,
       // 旧偏好只有 eraserScope（全部/仅图形/仅化学），迁移到四项目标；
       // 新偏好缺字段时按"全部选中"，避免升级后橡皮静默失效。
       eraserTargets: normalizeEraserTargets(
@@ -897,6 +909,7 @@ export const useAppStore = create<AppState>((set, get) => {
     },
     chemBondLength: prefs.chemBondLength,
     chemBondWidth: prefs.chemBondWidth,
+    chemBondSpacing: prefs.chemBondSpacing,
     recent: readRecent(),
     customTemplates: prefs.customTemplates,
     toasts: [],
@@ -1589,7 +1602,8 @@ export const useAppStore = create<AppState>((set, get) => {
         tool === 'bucket' ||
         tool === 'symmetry' ||
         tool === 'guides' ||
-        (get().toolPanel === 'chem' && !CHEM_TOOL_IDS.includes(tool));
+        // 选择工具例外：允许先选中/移动对象，化学横栏继续保留，方便随后接着画。
+        (get().toolPanel === 'chem' && !CHEM_TOOL_IDS.includes(tool) && tool !== 'select');
       if (tool === 'eyedropper' && get().activeTool !== 'eyedropper') {
         toolBeforeEyedropper = get().activeTool;
       }
@@ -1821,6 +1835,12 @@ export const useAppStore = create<AppState>((set, get) => {
       const value = clamp(Math.round(width * 10) / 10, 0.5, 8);
       set({ chemBondWidth: value });
       scheduleBrushPrefs({ chemBondWidth: value });
+    },
+
+    setChemBondSpacing: (spacing) => {
+      const value = clamp(Math.round(spacing * 10) / 10, 1, 16);
+      set({ chemBondSpacing: value });
+      scheduleBrushPrefs({ chemBondSpacing: value });
     },
 
     updateDoc: (next, record = true) => {

@@ -2902,7 +2902,7 @@ async function runSmokeFlow(win, smokeErrors) {
     }))()`
   );
 
-  // ---- 滚轮：普通滚轮平移，Ctrl+滚轮缩放 ----
+  // ---- 滚轮：单滚轮 / Ctrl+滚轮都直接缩放 ----
   const zoomBefore = await readDom(
     win,
     `document.querySelector('.zoom-dock__value')?.textContent || null`
@@ -3841,6 +3841,7 @@ async function runSmokeFlow(win, smokeErrors) {
       if (!handle) return { ok: false, reason: 'no-handle' };
       const group = rect.closest('[data-object-id]');
       const before = rect.getAttribute('width');
+      const beforeH = rect.getAttribute('height');
       const hb = handle.getBoundingClientRect();
       const sx = hb.left + hb.width / 2;
       const sy = hb.top + hb.height / 2;
@@ -3855,13 +3856,25 @@ async function runSmokeFlow(win, smokeErrors) {
       const during = rect.getAttribute('width');
       hit.dispatchEvent(new PointerEvent('pointerup', opts(sx + 120, sy + 80, 0)));
       await new Promise((resolve) => setTimeout(resolve, 200));
+      const after = rect.getAttribute('width');
+      const afterH = rect.getAttribute('height');
+      const beforeW = Number(before);
+      const beforeHeight = Number(beforeH);
+      const afterW = Number(after);
+      const afterHeight = Number(afterH);
       return {
         ok: true,
         before,
+        beforeH,
         during,
-        after: rect.getAttribute('width'),
+        after,
+        afterH,
         previewAttr,
-        afterPreviewAttr: group.getAttribute('data-drag-preview')
+        afterPreviewAttr: group.getAttribute('data-drag-preview'),
+        aspectPreserved:
+          beforeW > 0 &&
+          beforeHeight > 0 &&
+          Math.abs(afterW / afterHeight - beforeW / beforeHeight) < 0.02
       };
     })()`
   );
@@ -5429,10 +5442,21 @@ async function runSmokeFlow(win, smokeErrors) {
       win,
       `(() => {
         const rows = [...document.querySelectorAll('[data-testid="import-batch-row"]')];
+        const list = document.querySelector('[data-testid="import-batch-list"]');
+        const style = list ? getComputedStyle(list) : null;
+        if (list) list.scrollTop = 120;
         return {
           rows: rows.length,
           okRows: rows.filter((row) => row.getAttribute('data-ok') === 'true').length,
-          names: rows.map((row) => row.querySelector('.import-batch__name')?.textContent || '')
+          names: rows.map((row) => row.querySelector('.import-batch__name')?.textContent || ''),
+          list: list
+            ? {
+                overflowY: style?.overflowY || '',
+                scrollHeight: list.scrollHeight,
+                clientHeight: list.clientHeight,
+                scrollTop: list.scrollTop
+              }
+            : null
         };
       })()`
     );
@@ -5689,6 +5713,9 @@ async function runSmokeFlow(win, smokeErrors) {
         batchState.layerActive &&
         afterAddMore.rows === 5 &&
         afterAddMore.okRows === 4 &&
+        afterAddMore.list?.overflowY === 'auto' &&
+        afterAddMore.list.scrollHeight > afterAddMore.list.clientHeight &&
+        afterAddMore.list.scrollTop > 0 &&
         prunedState.rows === 2 &&
         prunedState.okRows === 2 &&
         prunedState.badRows === 0 &&
@@ -5745,6 +5772,155 @@ async function runSmokeFlow(win, smokeErrors) {
     if (batchSvgHeld && fs.existsSync(batchSvgHold)) fs.renameSync(batchSvgHold, imageSvgPath);
   }
   console.log('BATCH_IMPORT ' + JSON.stringify(batchImport));
+
+  // ---- 化学交互：选择工具保持化学横栏、一级参数栏、键距设置与新建键几何 ----
+  let chemFocus = { ok: false };
+  const setInputValue = (selector, value) =>
+    `(() => {
+      const input = document.querySelector('${selector}');
+      if (!input) return false;
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+      setter.call(input, '${value}');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      return true;
+    })()`;
+  try {
+    await selectTool('bond');
+    await sleep(260);
+    const initialParams = await readDom(
+      win,
+      `(() => ({
+        dock: Boolean(document.querySelector('[data-testid="chem-dock"]')),
+        length: document.querySelector('[data-testid="chem-bond-length"]')?.value ?? null,
+        width: document.querySelector('[data-testid="chem-bond-width"]')?.value ?? null,
+        spacing: document.querySelector('[data-testid="chem-bond-spacing"]')?.value ?? null
+      }))()`
+    );
+    await selectTool('select');
+    await sleep(220);
+    const sticky = await readDom(
+      win,
+      `(() => ({
+        dock: Boolean(document.querySelector('[data-testid="chem-dock"]')),
+        tool: document.querySelector('[data-testid="status-tool"]')?.textContent || ''
+      }))()`
+    );
+    await readDom(win, `document.querySelector('[data-testid="chem-confirm"]')?.click()`);
+    await sleep(220);
+    const closedAfterConfirm = await readDom(
+      win,
+      `!Boolean(document.querySelector('[data-testid="chem-dock"]'))`
+    );
+
+    await selectTool('bond');
+    await sleep(260);
+    await readDom(win, setInputValue('[data-testid="chem-bond-length"]', 60));
+    await readDom(win, setInputValue('[data-testid="chem-bond-width"]', 3));
+    await readDom(win, setInputValue('[data-testid="chem-bond-spacing"]', 6));
+    await sleep(180);
+    const changedParams = await readDom(
+      win,
+      `(() => ({
+        length: document.querySelector('[data-testid="chem-bond-length"]')?.value ?? null,
+        width: document.querySelector('[data-testid="chem-bond-width"]')?.value ?? null,
+        spacing: document.querySelector('[data-testid="chem-bond-spacing"]')?.value ?? null
+      }))()`
+    );
+    await screenshot('smoke-chem-params.png');
+    await readDom(win, `document.querySelector('[data-bond="double"]')?.click()`);
+    await sleep(140);
+    await readDom(win, clickExpression(0.08, 0.08));
+    await sleep(320);
+    const createdBond = await readDom(
+      win,
+      `(() => {
+        const groups = [...document.querySelectorAll('.scene-layer [data-object-id]')];
+        const group = [...groups].reverse().find((item) => {
+          const lines = item.querySelectorAll('line');
+          return lines.length >= 2 && !item.querySelector('path, rect, text, image');
+        });
+        if (!group) return null;
+        const lines = [...group.querySelectorAll('line')].map((line) => ({
+          x1: Number(line.getAttribute('x1')),
+          y1: Number(line.getAttribute('y1')),
+          x2: Number(line.getAttribute('x2')),
+          y2: Number(line.getAttribute('y2')),
+          width: Number(line.getAttribute('stroke-width'))
+        }));
+        const length = (line) => Math.hypot(line.x2 - line.x1, line.y2 - line.y1);
+        const main = lines.reduce((best, line) => (length(line) > length(best) ? line : best));
+        const mainLength = length(main);
+        const dx = main.x2 - main.x1;
+        const dy = main.y2 - main.y1;
+        const norm = Math.max(0.001, Math.hypot(dx, dy));
+        const gaps = lines
+          .filter((line) => line !== main)
+          .map((line) => {
+            const px = (line.x1 + line.x2) / 2;
+            const py = (line.y1 + line.y2) / 2;
+            return Math.abs((px - main.x1) * dy - (py - main.y1) * dx) / norm;
+          })
+          .filter((gap) => gap > 0.1);
+        return {
+          lines: lines.length,
+          length: mainLength,
+          width: main.width,
+          gap: gaps.length > 0 ? Math.min(...gaps) : null
+        };
+      })()`
+    );
+
+    await readDom(win, `document.querySelector('[data-testid="settings-button"]')?.click()`);
+    await sleep(240);
+    await readDom(
+      win,
+      `document.querySelector('[data-testid="settings-tab-chemistry"]')?.click()`
+    );
+    await sleep(180);
+    const settingsSpacing = await readDom(
+      win,
+      `document.querySelector('[data-testid="settings-bond-spacing"]')?.value ?? null`
+    );
+    await readDom(win, setInputValue('[data-testid="settings-bond-spacing"]', 5));
+    await sleep(180);
+    await readDom(win, `document.querySelector('.modal [aria-label="关闭"]')?.click()`);
+    await sleep(220);
+    const toolbarSpacing = await readDom(
+      win,
+      `document.querySelector('[data-testid="chem-bond-spacing"]')?.value ?? null`
+    );
+
+    chemFocus = {
+      ok:
+        initialParams.dock &&
+        initialParams.length === '40' &&
+        initialParams.width === '2.2' &&
+        initialParams.spacing === '4.2' &&
+        sticky.dock &&
+        sticky.tool.includes('选择') &&
+        closedAfterConfirm &&
+        changedParams.length === '60' &&
+        changedParams.width === '3.0' &&
+        changedParams.spacing === '6.0' &&
+        createdBond &&
+        Math.abs(createdBond.length - 60) < 1 &&
+        Math.abs(createdBond.width - 3) < 0.2 &&
+        createdBond.gap !== null &&
+        Math.abs(createdBond.gap - 6) < 0.5 &&
+        settingsSpacing === '6' &&
+        toolbarSpacing === '5.0',
+      initialParams,
+      sticky,
+      closedAfterConfirm,
+      changedParams,
+      createdBond,
+      settingsSpacing,
+      toolbarSpacing
+    };
+  } catch (error) {
+    chemFocus = { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+  console.log('CHEM_FOCUS ' + JSON.stringify(chemFocus));
 
   const failed =
     alphaClip.defs <= 0 ||
@@ -6172,8 +6348,7 @@ async function runSmokeFlow(win, smokeErrors) {
     !zoomBefore ||
     !zoomPlain ||
     !zoomAfter ||
-    zoomPlain !== zoomBefore ||
-    panAfter === panBefore ||
+    zoomPlain === zoomBefore ||
     zoomAfter === zoomPlain ||
     symmetryPanel.modes !== 4 ||
     !symmetryInfo.symmetry ||
@@ -6290,6 +6465,7 @@ async function runSmokeFlow(win, smokeErrors) {
     resizePreview.during === resizePreview.before ||
     resizePreview.after !== resizePreview.during ||
     resizePreview.afterPreviewAttr !== null ||
+    !resizePreview.aspectPreserved ||
     !multiplyStroke.ok ||
     multiplyStroke.grains < 1 ||
     multiplyStroke.liveDabs < 1 ||
@@ -6308,6 +6484,7 @@ async function runSmokeFlow(win, smokeErrors) {
     scenarioFailures.length > 0 ||
     !imageImport.ok ||
     !batchImport.ok ||
+    !chemFocus.ok ||
     smokeErrors.length > 0;
 
   if (failed) {
