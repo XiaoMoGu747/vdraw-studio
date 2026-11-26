@@ -1,8 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { useAppStore } from '../../store/useAppStore';
 import { Icon } from './Icon';
-import { useFocusTrap } from './useFocusTrap';
 
 type ColorMode = 'wheel' | 'palette' | 'slider';
 type Target = 'fill' | 'stroke';
@@ -12,6 +9,8 @@ interface ColorPanelProps {
   stroke: string | null;
   onChangeFill: (color: string | null) => void;
   onChangeStroke: (color: string | null) => void;
+  /** 收窄态点击色块时先展开左侧栏，保证原位调色板有足够宽度。 */
+  onRequestExpand?: () => void;
 }
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
@@ -159,15 +158,17 @@ function NoneSwatch({ active }: { active: boolean }) {
  * 调色板：折叠态只占一行（填充/描边双色块 + 当前色 + 最近色），
  * 点击色块展开浮层；默认使用色板模式。支持“无填充/无描边”。
  */
-export function ColorPanel({ fill, stroke, onChangeFill, onChangeStroke }: ColorPanelProps) {
+export function ColorPanel({
+  fill,
+  stroke,
+  onChangeFill,
+  onChangeStroke,
+  onRequestExpand
+}: ColorPanelProps) {
   const [mode, setMode] = useState<ColorMode>('palette');
   const [target, setTarget] = useState<Target>('fill');
   const [recent, setRecent] = useState<string[]>(readRecent);
   const [open, setOpen] = useState(false);
-  const [popover, setPopover] = useState<{ left: number; top: number } | null>(null);
-  const rootRef = useRef<HTMLDivElement>(null);
-  const popoverRef = useRef<HTMLDivElement>(null);
-  const barRef = useRef<HTMLDivElement>(null);
   const lastApplied = useRef<string | null>(null);
 
   const activeColor = target === 'fill' ? fill : stroke;
@@ -246,52 +247,6 @@ export function ColorPanel({ fill, stroke, onChangeFill, onChangeStroke }: Color
     };
   });
 
-  // 浮层栈：打开时登记，全局快捷键据此让位；Esc 只关闭最上层。
-  useEffect(() => {
-    if (!open) return;
-    const { pushOverlay, popOverlay } = useAppStore.getState();
-    pushOverlay();
-    return () => popOverlay();
-  }, [open]);
-
-  useFocusTrap(
-    popoverRef,
-    open && Boolean(popover),
-    () => setOpen(false),
-    '.color-grid .swatch, .color-wheel__ring, .color-sliders input'
-  );
-
-  // 浮层位置跟随折叠条，避免被左侧栏的滚动容器裁剪。
-  useEffect(() => {
-    if (!open) {
-      setPopover(null);
-      return;
-    }
-    const place = () => {
-      const rect = barRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      const width = 252;
-      const height = Math.min(window.innerHeight - 24, 520);
-      const left = Math.min(rect.right + 8, window.innerWidth - width - 8);
-      const top = Math.min(Math.max(8, rect.top), Math.max(8, window.innerHeight - height - 8));
-      setPopover({ left, top });
-    };
-    place();
-    window.addEventListener('resize', place);
-    return () => window.removeEventListener('resize', place);
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-    const onPointerDown = (event: PointerEvent) => {
-      const node = event.target as Node;
-      if (rootRef.current?.contains(node) || popoverRef.current?.contains(node)) return;
-      setOpen(false);
-    };
-    document.addEventListener('pointerdown', onPointerDown);
-    return () => document.removeEventListener('pointerdown', onPointerDown);
-  }, [open]);
-
   const cmyk = rgbToCmyk(rgb.r, rgb.g, rgb.b);
   const wheelRgb = hsvToRgb(hue, 1, 1);
   const wheelColor = rgbToHex(wheelRgb.r, wheelRgb.g, wheelRgb.b);
@@ -313,6 +268,7 @@ export function ColorPanel({ fill, stroke, onChangeFill, onChangeStroke }: Color
           data-testid={which === 'fill' ? 'color-entry' : 'color-entry-stroke'}
           onClick={() => {
             setTarget(which);
+            onRequestExpand?.();
             setOpen(true);
           }}
         >
@@ -338,8 +294,8 @@ export function ColorPanel({ fill, stroke, onChangeFill, onChangeStroke }: Color
   };
 
   return (
-    <div className="color-panel" data-testid="color-panel" ref={rootRef}>
-      <div className="palette-bar" ref={barRef}>
+    <div className="color-panel" data-testid="color-panel">
+      <div className="palette-bar">
         {/* 展开按钮放在左上角：与标题同排，收缩态也保持同一位置。 */}
         <div className="palette-bar__head">
           <button
@@ -349,7 +305,10 @@ export function ColorPanel({ fill, stroke, onChangeFill, onChangeStroke }: Color
             title={open ? '收起调色板' : '展开调色板'}
             aria-label={open ? '收起调色板' : '展开调色板'}
             aria-expanded={open}
-            onClick={() => setOpen((value) => !value)}
+            onClick={() => {
+              if (!open) onRequestExpand?.();
+              setOpen((value) => !value);
+            }}
           >
             <Icon name="chevronDown" size={13} />
           </button>
@@ -375,6 +334,7 @@ export function ColorPanel({ fill, stroke, onChangeFill, onChangeStroke }: Color
                 aria-label={`${label}颜色 ${value ?? '无'}`}
                 onClick={() => {
                   setTarget(which);
+                  onRequestExpand?.();
                   setOpen(true);
                 }}
               >
@@ -401,17 +361,12 @@ export function ColorPanel({ fill, stroke, onChangeFill, onChangeStroke }: Color
         </div>
       </div>
 
-      {open && popover
-        ? createPortal(
+      {open ? (
             <div
-              className="color-popover"
+              className="color-popover color-popover--inline"
               data-testid="color-popover"
-              ref={popoverRef}
-              style={{ left: popover.left, top: popover.top }}
-              role="dialog"
-              aria-modal="false"
+              role="region"
               aria-label="调色板"
-              tabIndex={-1}
             >
               <div className="color-panel__modes">
                 <button
@@ -718,8 +673,7 @@ export function ColorPanel({ fill, stroke, onChangeFill, onChangeStroke }: Color
               <p className="color-popover__hint">
                 目标：{target === 'fill' ? '填充' : '描边'} · 未选中对象时修改的是新图形默认样式
               </p>
-            </div>,
-            document.body
+            </div>
           )
         : null}
     </div>

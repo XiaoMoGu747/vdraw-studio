@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { SHAPE_TOOL_IDS, TOOL_MAP, hasToolOptions } from '../../core/tools';
 import { allObjects, expandSelection, replaceObject } from '../../core/scene';
 import type { Style } from '../../types/document';
@@ -11,7 +12,9 @@ import { ToolOptions } from './ToolOptions';
  * 全部位于布局流内，不会覆盖画布；面板不会因为点击画布而关闭。
  */
 export function LeftDock({ collapsed = false }: { collapsed?: boolean }) {
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const activeTool = useAppStore((state) => state.activeTool);
+  const setLeftDockOpen = useAppStore((state) => state.setLeftDockOpen);
   const setTool = useAppStore((state) => state.setTool);
   const doc = useAppStore((state) => state.doc);
   const selection = useAppStore((state) => state.selection);
@@ -142,6 +145,7 @@ export function LeftDock({ collapsed = false }: { collapsed?: boolean }) {
           stroke={strokeColor}
           onChangeFill={setFill}
           onChangeStroke={setStroke}
+          onRequestExpand={() => setLeftDockOpen(true)}
         />
       </div>
 
@@ -152,12 +156,31 @@ export function LeftDock({ collapsed = false }: { collapsed?: boolean }) {
           data-testid="left-dock-brush"
           title="展开画笔大小与不透明度"
           aria-label="展开画笔大小与不透明度"
-          onClick={() => useAppStore.getState().setLeftDockOpen(true)}
+          onClick={() => {
+            useAppStore.getState().setLeftDockOpen(true);
+            setDrawerOpen(true);
+          }}
         >
           <Icon name="brush" size={16} />
         </button>
       ) : null}
 
+      {!collapsed ? (
+        <div className={`left-dock__drawer${drawerOpen ? ' is-open' : ''}`}>
+          <button
+            type="button"
+            className="left-dock__drawer-toggle"
+            data-testid="left-dock-drawer-toggle"
+            aria-expanded={drawerOpen}
+            title={drawerOpen ? '收起描边与工具设置' : '展开描边与工具设置'}
+            onClick={() => setDrawerOpen((value) => !value)}
+          >
+            <Icon name="settings" size={13} />
+            <span>描边与工具</span>
+            <Icon name="chevronDown" size={13} />
+          </button>
+
+          <div className="left-dock__drawer-body">
       <div className="dock-block dock-block--sliders">
         <div className="dock-slider">
           <div className="dock-slider__head">
@@ -267,6 +290,9 @@ export function LeftDock({ collapsed = false }: { collapsed?: boolean }) {
           <p className="dock-tools__hint">{tool.hint}</p>
         )}
       </div>
+          </div>
+        </div>
+      ) : null}
     </aside>
   );
 }

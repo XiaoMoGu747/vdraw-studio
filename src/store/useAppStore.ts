@@ -2675,7 +2675,9 @@ export const useAppStore = create<AppState>((set, get) => {
       const doc = get().doc;
       if (!clean || clean === doc.name) return;
       const recent = get().recent.map((item) =>
-        item.id === doc.id ? { ...item, name: clean } : item
+        item.id === doc.id || (doc.filePath && item.path === doc.filePath)
+          ? { ...item, name: clean }
+          : item
       );
       writeRecent(recent);
       set({
@@ -2699,11 +2701,22 @@ export const useAppStore = create<AppState>((set, get) => {
     renameRecent: (id, name) => {
       const clean = name.trim().replace(/\s+/g, ' ').slice(0, 80);
       if (!clean) return;
+      const target = get().recent.find((item) => item.id === id);
       const recent = get().recent.map((item) =>
         item.id === id ? { ...item, name: clean } : item
       );
       writeRecent(recent);
-      set({ recent });
+      // 若当前内存中的文档正好是这条记录，标题也立即同步，返回画布时不再显示旧名。
+      const doc = get().doc;
+      const sameDocument = Boolean(
+        target && (doc.id === target.id || (target.path && doc.filePath === target.path))
+      );
+      set({
+        recent,
+        ...(sameDocument && doc.name !== clean
+          ? { doc: { ...doc, name: clean, updatedAt: new Date().toISOString() } }
+          : {})
+      });
     },
 
     removeRecent: (id) => {

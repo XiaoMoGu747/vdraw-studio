@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useAppStore } from '../../store/useAppStore';
 import type { TemplateId } from '../../core/document';
 import { Icon } from '../ui/Icon';
@@ -77,18 +78,113 @@ export function StartPage() {
   const [closeConfirmOpen, setCloseConfirmOpen] = useState(false);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
+  const [contextMenu, setContextMenu] = useState<{
+    id: string;
+    x: number;
+    y: number;
+  } | null>(null);
   const renameCancelled = useRef(false);
+  const openTimer = useRef<number | null>(null);
 
   useEffect(() => {
     if (!bridge) return;
     return bridge.window.onStateChange((state) => setMaximized(state.maximized));
   }, [bridge]);
 
+  const clearOpenTimer = () => {
+    if (openTimer.current !== null) {
+      window.clearTimeout(openTimer.current);
+      openTimer.current = null;
+    }
+  };
+
+  useEffect(() => clearOpenTimer, []);
+
+  const openRecent = (item: (typeof recent)[number]) => {
+    if (item.path) void fileActions.openPath(item.path);
+    else notify('该记录没有关联本地文件，请使用“打开画布”', 'warn');
+  };
+
+  // 单击延迟打开，给双击文件名留出重命名窗口，避免双击时先打开文档。
+  const scheduleOpenRecent = (item: (typeof recent)[number]) => {
+    clearOpenTimer();
+    openTimer.current = window.setTimeout(() => {
+      openTimer.current = null;
+      openRecent(item);
+    }, 230);
+  };
+
   const startRecentRename = (id: string, name: string) => {
+    clearOpenTimer();
+    setContextMenu(null);
     renameCancelled.current = false;
     setRenamingId(id);
     setRenameDraft(name);
   };
+
+  const copyRecent = async (id: string) => {
+    const item = recent.find((entry) => entry.id === id);
+    setContextMenu(null);
+    if (!item) return;
+    const text = item.path || item.name;
+    let copied = false;
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        copied = true;
+      }
+    } catch {
+      copied = false;
+    }
+    if (!copied) {
+      try {
+        const area = document.createElement('textarea');
+        area.value = text;
+        area.style.position = 'fixed';
+        area.style.opacity = '0';
+        document.body.appendChild(area);
+        area.select();
+        copied = document.execCommand('copy');
+        area.remove();
+      } catch {
+        copied = false;
+      }
+    }
+    notify(
+      copied
+        ? `已复制${item.path ? '文件路径' : '文件名'}：${text}`
+        : '复制失败，请检查剪贴板权限',
+      copied ? 'success' : 'warn'
+    );
+  };
+
+  const deleteRecent = (id: string) => {
+    clearOpenTimer();
+    setContextMenu(null);
+    removeRecent(id);
+  };
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    const close = (event: PointerEvent) => {
+      if ((event.target as HTMLElement | null)?.closest('.recent-context-menu')) return;
+      setContextMenu(null);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setContextMenu(null);
+    };
+    const onScroll = () => setContextMenu(null);
+    document.addEventListener('pointerdown', close);
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('resize', onScroll);
+    window.addEventListener('scroll', onScroll, true);
+    return () => {
+      document.removeEventListener('pointerdown', close);
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('resize', onScroll);
+      window.removeEventListener('scroll', onScroll, true);
+    };
+  }, [contextMenu]);
 
   const finishRecentRename = () => {
     if (!renamingId) return;
@@ -264,7 +360,12 @@ export function StartPage() {
                     key={item.id}
                     onContextMenu={(event) => {
                       event.preventDefault();
-                      startRecentRename(item.id, item.name);
+                      clearOpenTimer();
+                      setContextMenu({
+                        id: item.id,
+                        x: Math.min(event.clientX, window.innerWidth - 168),
+                        y: Math.min(event.clientY, window.innerHeight - 132)
+                      });
                     }}
                   >
                     {renaming ? (
@@ -298,17 +399,22 @@ export function StartPage() {
                           type="button"
                           className="recent-item__main"
                           data-testid="recent-row"
-                          title={`${item.name} · 右键重命名`}
-                          onClick={() => {
-                            if (item.path) void fileActions.openPath(item.path);
-                            else notify('该记录没有关联本地文件，请使用“打开画布”', 'warn');
-                          }}
+                          title={`${item.name} · 双击名称重命名 · 右键更多`}
+                          onClick={() => scheduleOpenRecent(item)}
                         >
                           <span className="recent-item__icon">
                             <Icon name="file" size={16} />
                           </span>
                           <span className="recent-item__body">
-                            <strong>{item.name}</strong>
+                            <strong
+                              onDoubleClick={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                startRecentRename(item.id, item.name);
+                              }}
+                            >
+                              {item.name}
+                            </strong>
                             <span>
                               {item.templateName} · {item.sizeLabel} ·{' '}
                               {formatRecentDate(item.openedAt)}
@@ -364,6 +470,56 @@ export function StartPage() {
           onCancel={() => setCloseConfirmOpen(false)}
         />
       ) : null}
+
+      {contextMenu
+        ? createPortal(
+            (() => {
+              const item = recent.find((entry) => entry.id === contextMenu.id);
+              if (!item) return null;
+              return (
+                <div
+                  className="recent-context-menu"
+                  data-testid="recent-context-menu"
+                  role="menu"
+                  style={{ left: contextMenu.x, top: contextMenu.y }}
+                  onPointerDown={(event) => event.stopPropagation()}
+                >
+                  <button
+                    type="button"
+                    role="menuitem"
+                    data-testid="recent-menu-rename"
+                    onClick={() => startRecentRename(item.id, item.name)}
+                  >
+                    <Icon name="text" size={14} />
+                    重命名
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    data-testid="recent-menu-copy"
+                    title="复制文件路径"
+                    onClick={() => void copyRecent(item.id)}
+                  >
+                    <Icon name="copy" size={14} />
+                    复制
+                  </button>
+                  <span className="recent-context-menu__divider" />
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="is-danger"
+                    data-testid="recent-menu-delete"
+                    onClick={() => deleteRecent(item.id)}
+                  >
+                    <Icon name="trash" size={14} />
+                    删除
+                  </button>
+                </div>
+              );
+            })(),
+            document.body
+          )
+        : null}
 
       <footer className="start-footer">
         <span>Electron{bridge?.versions.electron ? ` ${bridge.versions.electron}` : ''} · React · TypeScript</span>

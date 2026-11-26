@@ -1639,8 +1639,51 @@
   padding: 8px 0;
   background: var(--neutral-0);
   border-right: 1px solid var(--border);
+  /* 工具提示绝对定位在按钮右侧；overflow-x 若为 visible 会因另一轴 auto 变成
+     auto，产生底部横向滑动条。这里直接裁掉横向溢出并保留原生 title 提示。 */
+  overflow-x: clip;
   overflow-y: auto;
-  overflow-x: visible;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-2) transparent;
+}
+
+/* 工具过多：向右增列、同步加宽竖栏，而不是出现滚动条或滑动块。 */
+.tool-rail[data-multi='true'] {
+  width: calc(46px + (var(--rail-cols) - 1) * 36px);
+  display: grid;
+  grid-template-columns: repeat(var(--rail-cols), 34px);
+  grid-auto-rows: 34px;
+  align-content: start;
+  justify-content: center;
+  gap: 2px;
+  padding: 8px 4px;
+  overflow: hidden;
+}
+
+.tool-rail[data-multi='true'] .tool-rail__group {
+  display: contents;
+}
+
+.tool-rail[data-multi='true'] .tool-rail__divider,
+.tool-rail[data-multi='true'] .rail-group-label,
+.tool-rail[data-multi='true'] .rail-btn__label {
+  display: none;
+}
+
+.tool-rail[data-multi='true'] .rail-btn {
+  width: 32px;
+  height: 32px;
+  justify-self: center;
+}
+
+.tool-rail[data-multi='true'] .tool-rail__group--tail {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: center;
+  gap: 2px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
 }
 
 .tool-rail__group {
@@ -2003,12 +2046,61 @@ html[data-rail-labels='true'] .rail-btn::after {
 .left-dock {
   width: var(--dock-w);
   flex: 0 0 auto;
+  align-self: flex-start;
+  height: auto;
+  max-height: 100%;
   display: flex;
   flex-direction: column;
   min-height: 0;
   background: var(--surface-1);
   border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
   overflow-y: auto;
+}
+
+/* 默认只展示调色板上半区；描边/不透明度与工具提示收进可手动展开的抽屉。 */
+.left-dock__drawer {
+  flex: none;
+}
+
+.left-dock__drawer-toggle {
+  width: 100%;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  text-align: left;
+}
+
+.left-dock__drawer-toggle span {
+  flex: 1;
+}
+
+.left-dock__drawer-toggle svg:last-child {
+  transition: transform var(--motion-2) ease;
+}
+
+.left-dock__drawer.is-open .left-dock__drawer-toggle svg:last-child {
+  transform: rotate(180deg);
+}
+
+.left-dock__drawer-toggle:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.left-dock__drawer-body {
+  display: none;
+}
+
+.left-dock__drawer.is-open .left-dock__drawer-body {
+  display: block;
 }
 
 /* 折叠态只占一行；展开内容使用浮动层，不再长期占用视高。 */
@@ -2061,8 +2153,8 @@ html[data-rail-labels='true'] .rail-btn::after {
 .left-dock--mini .palette-row__name,
 .left-dock--mini .palette-row__value,
 .left-dock--mini .palette-recent,
-.left-dock--mini .dock-block--sliders,
-.left-dock--mini .dock-tools {
+.left-dock--mini .left-dock__drawer,
+.left-dock--mini .color-popover {
   display: none;
 }
 
@@ -2601,6 +2693,40 @@ html[data-rail-labels='true'] .rail-btn::after {
   border: 1px solid var(--border-2);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-md);
+}
+
+/* 原位展开：插在调色板条目下方，随左侧栏布局下推，不再从右侧浮出。 */
+.color-popover--inline {
+  position: static;
+  width: 100%;
+  max-height: min(62vh, 560px);
+  margin-top: 6px;
+  padding: 8px;
+  border-color: var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: none;
+  background: var(--bg-panel-2);
+}
+
+/* 内联面板较窄：目标页签保持单行，模式按钮略收紧。 */
+.color-popover--inline .color-panel__modes {
+  gap: 0;
+}
+
+.color-popover--inline .color-panel__modes > button {
+  width: 24px;
+  height: 24px;
+}
+
+.color-popover--inline .color-panel__target button {
+  min-height: 22px;
+  padding: 2px 4px;
+  white-space: nowrap;
+}
+
+.color-popover--inline .color-popover__close {
+  width: 22px;
+  height: 22px;
 }
 
 .color-popover__close {

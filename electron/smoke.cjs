@@ -3614,6 +3614,13 @@ async function runSmokeFlow(win, smokeErrors) {
     })()`
   );
   await sleep(320);
+  // 原位调色板除手动收回外不会因 Esc/点击外部自动关闭。
+  const paletteStayedOpen = await readDom(
+    win,
+    `Boolean(document.querySelector('[data-testid="color-popover"]'))`
+  );
+  await readDom(win, `document.querySelector('[data-testid="color-expand"]')?.click()`);
+  await sleep(220);
   const escapeLayered = await readDom(
     win,
     `(() => ({
@@ -6253,6 +6260,186 @@ async function runSmokeFlow(win, smokeErrors) {
     uiPolish = { ok: false, error: error instanceof Error ? error.message : String(error) };
   }
   console.log('UI_POLISH ' + JSON.stringify(uiPolish));
+
+  // ---- 最近文件：双击重命名、右键菜单、与画布标题双向同步 ----
+  let recentSync = { ok: false };
+  try {
+    await readDom(win, `document.querySelector('.titlebar__brand')?.click()`);
+    await sleep(520);
+    const recentCount = await readDom(
+      win,
+      `document.querySelectorAll('[data-testid="recent-row"]').length`
+    );
+    if (recentCount > 0) {
+      await readDom(
+        win,
+        `(() => {
+          const row = document.querySelector('[data-testid="recent-row"]')?.closest('.recent-item');
+          row?.dispatchEvent(new MouseEvent('contextmenu', {
+            bubbles: true,
+            cancelable: true,
+            clientX: 220,
+            clientY: 220
+          }));
+          return Boolean(row);
+        })()`
+      );
+      await sleep(180);
+      const menuState = await readDom(
+        win,
+        `(() => {
+          const menu = document.querySelector('[data-testid="recent-context-menu"]');
+          return {
+            open: Boolean(menu),
+            text: menu?.textContent || '',
+            rename: Boolean(document.querySelector('[data-testid="recent-menu-rename"]')),
+            copy: Boolean(document.querySelector('[data-testid="recent-menu-copy"]')),
+            remove: Boolean(document.querySelector('[data-testid="recent-menu-delete"]'))
+          };
+        })()`
+      );
+      await readDom(win, `document.querySelector('[data-testid="recent-menu-copy"]')?.click()`);
+      await sleep(220);
+      const copyToast = await readDom(
+        win,
+        `[...document.querySelectorAll('[data-testid="toast"]')].map((el) => el.textContent || '').join('|')`
+      );
+
+      await readDom(
+        win,
+        `(() => {
+          const name = document.querySelector('[data-testid="recent-row"] .recent-item__body strong');
+          name?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }));
+          return Boolean(name);
+        })()`
+      );
+      await sleep(200);
+      const renameInputOpened = await readDom(
+        win,
+        `Boolean(document.querySelector('[data-testid="recent-rename-input"]'))`
+      );
+      await readDom(
+        win,
+        `(() => {
+          const input = document.querySelector('[data-testid="recent-rename-input"]');
+          if (!input) return false;
+          input.focus();
+          const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+          setter.call(input, '冒烟最近-同步');
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+          input.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+          return true;
+        })()`
+      );
+      await sleep(260);
+      const recentRenamed = await readDom(
+        win,
+        `document.querySelector('[data-testid="recent-row"] .recent-item__body strong')?.textContent || null`
+      );
+
+      // 右键菜单保留完整三项，关闭后再打开文件。
+      await readDom(
+        win,
+        `(() => {
+          const row = document.querySelector('[data-testid="recent-row"]')?.closest('.recent-item');
+          row?.dispatchEvent(new MouseEvent('contextmenu', {
+            bubbles: true,
+            cancelable: true,
+            clientX: 220,
+            clientY: 220
+          }));
+          return Boolean(row);
+        })()`
+      );
+      await sleep(160);
+      const menuAgain = await readDom(
+        win,
+        `(() => {
+          const menu = document.querySelector('[data-testid="recent-context-menu"]');
+          return {
+            open: Boolean(menu),
+            text: menu?.textContent || ''
+          };
+        })()`
+      );
+      await readDom(win, `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
+      await sleep(160);
+
+      await readDom(win, `document.querySelector('[data-testid="recent-row"]')?.click()`);
+      await sleep(900);
+      const openedTitle = await readDom(
+        win,
+        `document.querySelector('[data-testid="doc-title"]')?.textContent || null`
+      );
+
+      await readDom(
+        win,
+        `document.querySelector('[data-testid="doc-title"]')?.dispatchEvent(
+          new MouseEvent('dblclick', { bubbles: true, cancelable: true })
+        )`
+      );
+      await sleep(180);
+      await readDom(
+        win,
+        `(() => {
+          const input = document.querySelector('[data-testid="doc-title-input"]');
+          if (!input) return false;
+          input.focus();
+          const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+          setter.call(input, '冒烟画布-同步');
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+          input.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+          return true;
+        })()`
+      );
+      await sleep(260);
+      const canvasRenamed = await readDom(
+        win,
+        `document.querySelector('[data-testid="doc-title"]')?.textContent || null`
+      );
+
+      await readDom(win, `document.querySelector('.titlebar__brand')?.click()`);
+      await sleep(520);
+      const syncedRecentName = await readDom(
+        win,
+        `document.querySelector('[data-testid="recent-row"] .recent-item__body strong')?.textContent || null`
+      );
+
+      recentSync = {
+        ok:
+          menuState.open &&
+          menuState.rename &&
+          menuState.copy &&
+          menuState.remove &&
+          menuState.text.includes('重命名') &&
+          menuState.text.includes('复制') &&
+          menuState.text.includes('删除') &&
+          copyToast.includes('已复制') &&
+          renameInputOpened &&
+          recentRenamed === '冒烟最近-同步' &&
+          menuAgain.open &&
+          menuAgain.text.includes('重命名') &&
+          openedTitle === '冒烟最近-同步' &&
+          canvasRenamed === '冒烟画布-同步' &&
+          syncedRecentName === '冒烟画布-同步',
+        recentCount,
+        menuState,
+        copyToast,
+        renameInputOpened,
+        recentRenamed,
+        menuAgain,
+        openedTitle,
+        canvasRenamed,
+        syncedRecentName
+      };
+    } else {
+      recentSync = { ok: false, error: '最近文件为空，无法验证重命名同步' };
+    }
+  } catch (error) {
+    recentSync = { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+  console.log('RECENT_SYNC ' + JSON.stringify(recentSync));
+
   console.log('SMOKE_CONSOLE_MESSAGES ' + JSON.stringify(smokeErrors));
 
   const failed =
@@ -6728,6 +6915,7 @@ async function runSmokeFlow(win, smokeErrors) {
     !colorEntry.entryVisible ||
     !colorEntry.brushVisible ||
     !colorEntryOpened ||
+    !paletteStayedOpen ||
     !escapeLayered.popoverGone ||
     escapeLayered.toolAfter !== colorEntry.toolBefore ||
     darkTheme.theme !== 'dark' ||
@@ -6824,6 +7012,7 @@ async function runSmokeFlow(win, smokeErrors) {
     !chemFocus.ok ||
     !chemExtras.ok ||
     !uiPolish.ok ||
+    !recentSync.ok ||
     smokeErrors.length > 0;
 
   if (failed) {

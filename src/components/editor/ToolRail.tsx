@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import type { CSSProperties } from 'react';
 import { RAIL_CATALOG, railEntry, railShortcut } from '../../core/rail';
 import type { RailEntry } from '../../core/rail';
 import { RAIL_GROUPS } from '../../core/tools';
@@ -25,6 +26,8 @@ export function ToolRail() {
 
   const [managerOpen, setManagerOpen] = useState(false);
   const [dragging, setDragging] = useState<string | null>(null);
+  const [railCols, setRailCols] = useState(1);
+  const railRef = useRef<HTMLElement | null>(null);
 
   const activate = (entry: RailEntry) => {
     if (entry.chemistry) {
@@ -70,6 +73,23 @@ export function ToolRail() {
     ...railOrder,
     ...RAIL_CATALOG.filter((entry) => !railOrder.includes(entry.key)).map((entry) => entry.key)
   ];
+  const groupSignature = entries.map((entry) => entry.group).join('|');
+
+  // 工具超过竖栏高度时向右增列并加宽竖栏，不再出现滚动条/滑动块。
+  useEffect(() => {
+    const nav = railRef.current;
+    if (!nav) return;
+    const measure = () => {
+      const availableRows = Math.max(1, Math.floor((nav.clientHeight - 16) / 34));
+      const groups = new Set(groupSignature.split('|').filter(Boolean)).size;
+      const neededRows = entries.length + 2 + Math.ceil(groups * 0.6);
+      setRailCols(Math.min(4, Math.max(1, Math.ceil(neededRows / availableRows))));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(nav);
+    return () => observer.disconnect();
+  }, [entries.length, groupSignature, showToolLabels]);
 
   const reorder = (sourceKey: string | null, targetKey: string) => {
     if (!sourceKey || sourceKey === targetKey) return;
@@ -81,7 +101,14 @@ export function ToolRail() {
 
   return (
     <>
-      <nav className="tool-rail" aria-label="工具" data-testid="tool-rail">
+      <nav
+        ref={railRef}
+        className="tool-rail"
+        aria-label="工具"
+        data-testid="tool-rail"
+        data-multi={railCols > 1 ? 'true' : 'false'}
+        style={{ '--rail-cols': railCols } as CSSProperties}
+      >
         {entries.map((entry, index) => {
           const previous = entries[index - 1];
           const shortcut = railShortcut(entry.key);

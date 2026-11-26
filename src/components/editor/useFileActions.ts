@@ -89,7 +89,9 @@ export function useFileActions() {
         forceDialog: saveAs
       });
       if (result.canceled || !result.path) return false;
-      const name = baseName(result.path);
+      // 普通保存保留用户在标题/最近文件里改过的名称；另存为才以新文件名称为准。
+      const name =
+        !saveAs && doc.filePath && doc.name ? doc.name : baseName(result.path);
       store.markSaved(result.path, name);
       registerRecent(result.path, name);
       notify(
@@ -137,7 +139,9 @@ export function useFileActions() {
       if (result.canceled || !result.content || !result.path) return;
       const store = useAppStore.getState();
       const { doc, editor } = parseDocumentFile(result.content);
-      const name = baseName(result.path);
+      // 最近文件里的重命名优先于磁盘文件内嵌的旧标题。
+      const recentName = store.recent.find((item) => item.path === result.path)?.name;
+      const name = recentName || baseName(result.path);
       store.loadDocument({ ...doc, name }, result.path);
       if (editor) store.applyEditorSnapshot(editor);
       registerRecent(result.path, name);
@@ -156,7 +160,9 @@ export function useFileActions() {
       if (result.canceled || !result.content) return;
       const store = useAppStore.getState();
       const { doc, editor } = parseDocumentFile(result.content);
-      const name = baseName(path);
+      // 启动页重命名后的记录名要延续到画布标题，避免重新打开又变回“未命名”。
+      const recentName = store.recent.find((item) => item.path === path)?.name;
+      const name = recentName || baseName(path);
       store.loadDocument({ ...doc, name }, path);
       if (editor) store.applyEditorSnapshot(editor);
       registerRecent(path, name);

@@ -980,7 +980,23 @@ test('重命名：文档标题与最近文件记录互相同步', () => {
 
   useAppStore.getState().renameRecent(doc.id, '最近记录名');
   assert.equal(useAppStore.getState().recent[0].name, '最近记录名');
-  assert.equal(useAppStore.getState().doc.name, '新 标题');
+  assert.equal(useAppStore.getState().doc.name, '最近记录名');
+
+  // 最近记录 id 与文档 id 不一致时，仍按文件路径双向同步。
+  const linkedDoc = { ...doc, filePath: 'C:/tmp/linked.vdraw' };
+  const linkedRecent = [
+    {
+      ...recent[0],
+      id: 'recent-path-id',
+      name: '路径旧名',
+      path: 'C:/tmp/linked.vdraw'
+    }
+  ];
+  useAppStore.setState({ doc: linkedDoc, recent: linkedRecent, isDirty: false });
+  useAppStore.getState().renameDocument('画布新名');
+  assert.equal(useAppStore.getState().recent[0].name, '画布新名');
+  useAppStore.getState().renameRecent('recent-path-id', '列表新名');
+  assert.equal(useAppStore.getState().doc.name, '列表新名');
 });
 
 test('对象图层：复制、删除与拖动层级（越靠后越在上层）', () => {
