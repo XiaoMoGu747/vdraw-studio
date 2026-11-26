@@ -29,7 +29,21 @@ const TYPE_ICON: Record<string, IconName> = {
   image: 'image'
 };
 
-export function LayersPanel() {
+interface LayersPanelProps {
+  /** 图层区局部收起：只隐藏图层列表与背景行，面板宽度不变。 */
+  layersCollapsed: boolean;
+  /** 对象区局部收起：只隐藏对象列表，图层区与背景行位置保持稳定。 */
+  objectsCollapsed: boolean;
+  onToggleLayers: () => void;
+  onToggleObjects: () => void;
+}
+
+export function LayersPanel({
+  layersCollapsed: layersSectionCollapsed,
+  objectsCollapsed: objectsSectionCollapsed,
+  onToggleLayers,
+  onToggleObjects
+}: LayersPanelProps) {
   const doc = useAppStore((state) => state.doc);
   const selection = useAppStore((state) => state.selection);
   const showGrid = useAppStore((state) => state.showGrid);
@@ -57,8 +71,6 @@ export function LayersPanel() {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
   const [objectScope, setObjectScope] = useState<'current' | 'all'>('current');
-  const [layersSectionCollapsed, setLayersSectionCollapsed] = useState(false);
-  const [objectsSectionCollapsed, setObjectsSectionCollapsed] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [collapsed, setCollapsed] = useState<string[]>([]);
   const [dropTarget, setDropTarget] = useState<{ id: string; position: LayerDropPosition } | null>(null);
@@ -114,8 +126,6 @@ export function LayersPanel() {
   const folderChildren = activeLayer
     ? doc.layers.filter((layer) => layer.parentId === activeLayer.id).length
     : 0;
-  const objectsCollapsed =
-    objectScope === 'current' && activeLayer ? collapsed.includes(activeLayer.id) : false;
 
   const toggleObjectVisible = (objectId: string) => {
     const object = getObject(doc, objectId);
@@ -163,6 +173,8 @@ export function LayersPanel() {
   };
 
   const dragRef = useRef<{ id: string; startX: number; startY: number; active: boolean } | null>(null);
+  /** 拖动排序结束后抑制随后的 click，避免误触文件夹展开或切换图层。 */
+  const layerDragClickRef = useRef(false);
 
   const layerAtPoint = (
     clientX: number,
@@ -218,6 +230,7 @@ export function LayersPanel() {
     dragRef.current = null;
     if (!drag) return;
     if (!drag.active) return;
+    layerDragClickRef.current = true;
     const hit = layerAtPoint(event.clientX, event.clientY);
     setDraggingId(null);
     setDropTarget(null);
@@ -232,7 +245,6 @@ export function LayersPanel() {
     const active = layer.id === doc.activeLayerId;
     const isFolder = layer.kind === 'folder';
     const expanded = !collapsed.includes(layer.id);
-    const layerObjectsCollapsed = collapsed.includes(layer.id);
     const drop = dropTarget?.id === layer.id ? dropTarget.position : null;
     return (
       <div key={layer.id} className="layer-branch">
@@ -242,20 +254,32 @@ export function LayersPanel() {
           data-layer-id={layer.id}
           role="button"
           tabIndex={0}
-          title={`${layer.name}\n点击切换当前图层；拖动调整顺序。`}
+          aria-expanded={isFolder ? expanded : undefined}
+          title={
+            isFolder
+              ? `${layer.name}\n点击展开/收起子图层；双击重命名；拖动调整顺序。`
+              : `${layer.name}\n点击切换当前图层；拖动调整顺序。`
+          }
           className={[
             'layer-row',
             active ? 'is-active' : '',
             layer.visible ? '' : 'is-hidden',
             draggingId === layer.id ? 'is-dragging' : '',
             isFolder ? 'layer-row--folder' : '',
+            isFolder && !expanded ? 'is-collapsed' : '',
             drop ? `is-drop-${drop}` : ''
           ]
             .filter(Boolean)
             .join(' ')}
           style={{ paddingLeft: 6 + depth * 14 }}
           onClick={(event) => {
+            if (layerDragClickRef.current) {
+              layerDragClickRef.current = false;
+              return;
+            }
             setActiveLayer(layer.id);
+            // 图层行不再有独立箭头：文件夹通过点击整行展开/收起，普通图层点击只切换。
+            if (isFolder) toggleCollapsed(layer.id);
             if (event.ctrlKey || event.metaKey) {
               setSelectedIds((prev) =>
                 prev.includes(layer.id) ? prev.filter((id) => id !== layer.id) : [...prev, layer.id]
@@ -270,52 +294,15 @@ export function LayersPanel() {
             setRenameDraft(layer.name);
           }}
           onKeyDown={(event) => {
-            if (event.key === 'Enter' || event.key === ' ') setActiveLayer(layer.id);
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            setActiveLayer(layer.id);
+            if (isFolder) toggleCollapsed(layer.id);
           }}
           onPointerDown={(event) => startLayerDrag(event, layer)}
           onPointerMove={moveLayerDrag}
           onPointerUp={endLayerDrag}
           onPointerCancel={endLayerDrag}
         >
-          {isFolder ? (
-            <button
-              type="button"
-              className={`layer-row__chevron${expanded ? '' : ' is-collapsed'}`}
-              title={expanded ? '折叠文件夹' : '展开文件夹'}
-              onClick={(event) => {
-                event.stopPropagation();
-                toggleCollapsed(layer.id);
-              }}
-            >
-              <Icon name="chevronDown" size={13} />
-            </button>
-          ) : (
-            <button
-              type="button"
-              className={`layer-row__chevron${layerObjectsCollapsed ? ' is-collapsed' : ''}`}
-              title={
-                active
-                  ? layerObjectsCollapsed
-                    ? '展开当前图层对象'
-                    : '折叠当前图层对象'
-                  : '切换到该图层并展开对象'
-              }
-              data-testid={`layer-toggle-${layer.id}`}
-              onClick={(event) => {
-                event.stopPropagation();
-                if (!active) {
-                  // 点击其他图层箭头时先切换并展开该图层，避免“刚切过去就被折叠”，
-                  // 也确保折叠目标始终是点击的图层，而不是下方对象区。
-                  setActiveLayer(layer.id);
-                  setCollapsed((prev) => prev.filter((id) => id !== layer.id));
-                  return;
-                }
-                toggleCollapsed(layer.id);
-              }}
-            >
-              <Icon name="chevronDown" size={13} />
-            </button>
-          )}
           <span className={`layer-row__thumb layer-row__thumb--${layer.kind}`}>
             <Icon
               name={isFolder ? 'folder' : layer.kind === 'chemistry' ? 'molecule' : 'layers'}
@@ -342,7 +329,9 @@ export function LayersPanel() {
             <span className="layer-row__meta">
               {KIND_LABEL[layer.kind] ?? '图层'} ·{' '}
               {isFolder
-                ? `${doc.layers.filter((item) => item.parentId === layer.id).length} 个子图层`
+                ? `${doc.layers.filter((item) => item.parentId === layer.id).length} 个子图层 · ${
+                    expanded ? '已展开' : '已收起'
+                  }`
                 : `${layer.objects.length} 个对象`}
             </span>
             {layer.id === doc.activeLayerId ? (
@@ -602,11 +591,15 @@ export function LayersPanel() {
           <button
             type="button"
             className={`icon-btn icon-btn--sm${layersSectionCollapsed ? ' is-active' : ''}`}
-            title={layersSectionCollapsed ? '展开图层列表' : '收起图层列表，为画布腾出空间'}
-            aria-label={layersSectionCollapsed ? '展开图层列表' : '收起图层列表'}
+            title={
+              layersSectionCollapsed
+                ? '展开图层区（局部展开，面板宽度不变）'
+                : '局部收起图层区（只隐藏图层列表与背景行，面板宽度不变）'
+            }
+            aria-label={layersSectionCollapsed ? '局部展开图层区' : '局部收起图层区'}
             aria-expanded={!layersSectionCollapsed}
             data-testid="layers-section-collapse"
-            onClick={() => setLayersSectionCollapsed((value) => !value)}
+            onClick={onToggleLayers}
           >
             <Icon
               name="chevronDown"
@@ -709,7 +702,6 @@ export function LayersPanel() {
         data-testid="background-layer"
         title="背景图层\n页面背景，不参与对象选择；点击眼睛显示/隐藏，点击色块修改颜色。"
       >
-        <span className="layer-row__chevron layer-row__chevron--empty" />
         <span
           className="layer-row__thumb layer-row__thumb--background"
           style={{ background: doc.page.background }}
@@ -787,8 +779,13 @@ export function LayersPanel() {
             className={`object-collapse${objectsSectionCollapsed ? ' is-collapsed' : ''}`}
             data-testid="objects-collapse"
             aria-expanded={!objectsSectionCollapsed}
-            title={objectsSectionCollapsed ? '展开对象列表' : '收起对象列表，为画布腾出空间'}
-            onClick={() => setObjectsSectionCollapsed((value) => !value)}
+            title={
+              objectsSectionCollapsed
+                ? '局部展开对象区（图层与背景行位置不变）'
+                : '局部收起对象区（只隐藏对象列表，图层与背景行位置不变）'
+            }
+            aria-label={objectsSectionCollapsed ? '局部展开对象区' : '局部收起对象区'}
+            onClick={onToggleObjects}
           >
             <Icon name="chevronDown" size={12} />
           </button>
@@ -796,21 +793,7 @@ export function LayersPanel() {
       </div>
 
       <div className="objects-section__body">
-      {objectsCollapsed ? (
-        <div className="objects-empty objects-empty--collapsed" data-testid="objects-collapsed">
-          <span className="objects-empty__icon">
-            <Icon name="layers" size={18} />
-          </span>
-          <p>对象列表已折叠</p>
-          <button
-            type="button"
-            className="btn btn--ghost btn--sm"
-            onClick={() => activeLayer && toggleCollapsed(activeLayer.id)}
-          >
-            展开对象
-          </button>
-        </div>
-      ) : objectScope === 'current' && activeLayer?.kind === 'folder' ? (
+      {objectScope === 'current' && activeLayer?.kind === 'folder' ? (
         <div className="objects-empty" title="文件夹是一个容器\n把其他图层拖到这里即可归类；绘制时会使用其中的子图层">
           <span className="objects-empty__icon">
             <Icon name="folder" size={18} />

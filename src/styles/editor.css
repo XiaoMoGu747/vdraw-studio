@@ -2616,6 +2616,37 @@ html[data-rail-labels='true'] .rail-btn::after {
   color: var(--text-3);
 }
 
+/* 整体收起：调色板只留一行入口，内容与取色浮层全部隐藏。 */
+.palette-bar--collapsed {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+}
+
+.palette-bar__collapsed-hint {
+  margin-left: auto;
+  font-size: var(--fs-2xs);
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.palette-collapse {
+  width: 24px;
+  height: 24px;
+  margin-left: auto;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-sm);
+  color: var(--text-3);
+}
+
+.palette-collapse:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
 .palette-swatch-wrap {
   position: relative;
   width: 28px;

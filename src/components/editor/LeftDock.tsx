@@ -146,6 +146,7 @@ export function LeftDock({ collapsed = false }: { collapsed?: boolean }) {
           onChangeFill={setFill}
           onChangeStroke={setStroke}
           onRequestExpand={() => setLeftDockOpen(true)}
+          compact={collapsed}
         />
       </div>
 

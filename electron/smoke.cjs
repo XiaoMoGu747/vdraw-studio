@@ -6402,6 +6402,13 @@ async function runSmokeFlow(win, smokeErrors) {
           eyeOnRight: Boolean(
             rowRect && eyeRect && eyeRect.left > rowRect.left + rowRect.width / 2
           ),
+          bgTop: Math.round(rowRect?.top ?? -1),
+          layerChevrons: document.querySelectorAll(
+            '[data-testid^="layer-toggle-"], .layer-row__chevron'
+          ).length,
+          canvasWidth: Math.round(
+            document.querySelector('[data-testid="canvas-hit"]')?.getBoundingClientRect().width || 0
+          ),
           tutorialHint: Boolean(document.querySelector('.layer-drag-hint, .props-hint')),
           eraserTip: document.querySelector('[data-chem-category="eraser"]')?.getAttribute('title') || ''
         };
@@ -6430,9 +6437,14 @@ async function runSmokeFlow(win, smokeErrors) {
       `(() => {
         const layer = document.querySelector('[data-testid="layer-section"]');
         const objects = document.querySelector('[data-testid="objects-section"]');
+        const bg = document.querySelector('[data-testid="background-layer"]');
         return {
           layer: layer?.getBoundingClientRect().height ?? 0,
-          objects: objects?.getBoundingClientRect().height ?? 0
+          objects: objects?.getBoundingClientRect().height ?? 0,
+          bgTop: Math.round(bg?.getBoundingClientRect().top ?? -1),
+          canvasWidth: Math.round(
+            document.querySelector('[data-testid="canvas-hit"]')?.getBoundingClientRect().width || 0
+          )
         };
       })()`
     );
@@ -6458,9 +6470,14 @@ async function runSmokeFlow(win, smokeErrors) {
       `(() => {
         const body = document.querySelector('.objects-section__body');
         const layer = document.querySelector('[data-testid="layer-section"]');
+        const bg = document.querySelector('[data-testid="background-layer"]');
         return {
           bodyHidden: !body || body.getBoundingClientRect().height < 1,
-          layer: layer?.getBoundingClientRect().height ?? 0
+          layer: layer?.getBoundingClientRect().height ?? 0,
+          bgTop: Math.round(bg?.getBoundingClientRect().top ?? -1),
+          canvasWidth: Math.round(
+            document.querySelector('[data-testid="canvas-hit"]')?.getBoundingClientRect().width || 0
+          )
         };
       })()`
     );
@@ -6468,16 +6485,115 @@ async function runSmokeFlow(win, smokeErrors) {
     await sleep(180);
     const sectionsRestored = await readDom(
       win,
-      `Boolean(document.querySelector('[data-testid="layer-section"]')?.getBoundingClientRect().height) &&
-       Boolean(document.querySelector('.objects-section__body')?.getBoundingClientRect().height)`
+      `(() => {
+        const bg = document.querySelector('[data-testid="background-layer"]');
+        return {
+          layer: Boolean(document.querySelector('[data-testid="layer-section"]')?.getBoundingClientRect().height),
+          body: Boolean(document.querySelector('.objects-section__body')?.getBoundingClientRect().height),
+          bgTop: Math.round(bg?.getBoundingClientRect().top ?? -1)
+        };
+      })()`
     );
 
+    // 整体收起：面板收成窄轨，内容全部隐藏但保留展开入口，画布回收宽度。
+    const beforeWhole = await readDom(
+      win,
+      `(() => ({
+        canvasWidth: Math.round(document.querySelector('[data-testid="canvas-hit"]')?.getBoundingClientRect().width || 0),
+        sidebarWidth: Math.round(document.querySelector('.right-sidebar')?.getBoundingClientRect().width || 0)
+      }))()`
+    );
     await readDom(win, `document.querySelector('[data-testid="right-sidebar-collapse"]')?.click()`);
-    await sleep(220);
-    const collapsed = await readDom(win, `!document.querySelector('.right-sidebar')`);
-    await readDom(win, `document.querySelector('[data-testid="toggle-right-dock"]')?.click()`);
+    await sleep(260);
+    const collapsed = await readDom(
+      win,
+      `(() => {
+        const rail = document.querySelector('.right-sidebar--rail');
+        return {
+          rail: Boolean(rail),
+          width: Math.round(rail?.getBoundingClientRect().width || 0),
+          expand: Boolean(document.querySelector('[data-testid="right-sidebar-expand"]')),
+          contentHidden: (() => {
+            const main = document.querySelector('.right-sidebar__main');
+            return !main || getComputedStyle(main).display === 'none' ||
+              main.getBoundingClientRect().width < 1;
+          })(),
+          canvasWidth: Math.round(document.querySelector('[data-testid="canvas-hit"]')?.getBoundingClientRect().width || 0)
+        };
+      })()`
+    );
+    await readDom(win, `document.querySelector('[data-testid="right-sidebar-expand"]')?.click()`);
+    await sleep(260);
+    const restored = await readDom(
+      win,
+      `(() => {
+        const bg = document.querySelector('[data-testid="background-layer"]');
+        return {
+          sidebar: Boolean(document.querySelector('.right-sidebar:not(.right-sidebar--rail)')),
+          tabs: Boolean(document.querySelector('.panel-tabs')),
+          layers: Boolean(document.querySelector('.layers-panel')),
+          bgTop: Math.round(bg?.getBoundingClientRect().top ?? -1),
+          canvasWidth: Math.round(document.querySelector('[data-testid="canvas-hit"]')?.getBoundingClientRect().width || 0)
+        };
+      })()`
+    );
+
+    // 属性区局部收起：表头保留、字段隐藏，展开后完整恢复。
+    await readDom(win, `document.querySelector('[data-testid="sidebar-tab-properties"]')?.click()`);
     await sleep(240);
-    const restored = await readDom(win, `Boolean(document.querySelector('.right-sidebar'))`);
+    const propsCollapse = await readDom(
+      win,
+      `(() => ({
+        button: Boolean(document.querySelector('[data-testid="properties-section-collapse"]')),
+        body: Boolean(document.querySelector('.props-inline__body'))
+      }))()`
+    );
+    await readDom(win, `document.querySelector('[data-testid="properties-section-collapse"]')?.click()`);
+    await sleep(180);
+    const propsCollapsed = await readDom(
+      win,
+      `(() => ({
+        bodyHidden: !document.querySelector('.props-inline__body'),
+        header: Boolean(document.querySelector('.props-inline__head')),
+        button: Boolean(document.querySelector('[data-testid="properties-section-collapse"]')),
+        expanded: document.querySelector('[data-testid="properties-section-collapse"]')?.getAttribute('aria-expanded') === 'false'
+      }))()`
+    );
+    await readDom(win, `document.querySelector('[data-testid="properties-section-collapse"]')?.click()`);
+    await sleep(180);
+    const propsRestored = await readDom(win, `Boolean(document.querySelector('.props-inline__body'))`);
+    await readDom(win, `document.querySelector('[data-testid="sidebar-tab-layers"]')?.click()`);
+    await sleep(200);
+
+    // 调色板整体收起：与取色浮层的局部收起分开，全部内容隐藏后仍可展开恢复。
+    const paletteBase = await readDom(
+      win,
+      `(() => ({
+        panel: Boolean(document.querySelector('[data-testid="color-panel"]')),
+        collapse: Boolean(document.querySelector('[data-testid="color-panel-collapse"]')),
+        rows: document.querySelectorAll('.palette-row').length
+      }))()`
+    );
+    await readDom(win, `document.querySelector('[data-testid="color-panel-collapse"]')?.click()`);
+    await sleep(200);
+    const paletteCollapsed = await readDom(
+      win,
+      `(() => ({
+        expanded: document.querySelector('[data-testid="color-panel"]')?.getAttribute('data-collapsed') === 'true',
+        rowsHidden: document.querySelectorAll('.palette-row').length === 0,
+        popoverHidden: !document.querySelector('[data-testid="color-popover"]'),
+        expand: Boolean(document.querySelector('[data-testid="color-panel-expand"]'))
+      }))()`
+    );
+    await readDom(win, `document.querySelector('[data-testid="color-panel-expand"]')?.click()`);
+    await sleep(200);
+    const paletteRestored = await readDom(
+      win,
+      `(() => ({
+        rows: document.querySelectorAll('.palette-row').length,
+        collapse: Boolean(document.querySelector('[data-testid="color-panel-collapse"]'))
+      }))()`
+    );
 
     layersPanel = {
       ok:
@@ -6491,6 +6607,7 @@ async function runSmokeFlow(win, smokeErrors) {
         base.eyeOnRight &&
         !base.tutorialHint &&
         base.eraserTip.startsWith('化学橡皮') &&
+        base.layerChevrons === 0 &&
         allState.active &&
         allState.rows >= base.objectRows &&
         allState.layerTags > 0 &&
@@ -6499,10 +6616,38 @@ async function runSmokeFlow(win, smokeErrors) {
         layersCollapsedState.hidden &&
         layersCollapsedState.objects > panelHeights.objects &&
         objectsCollapsedState.bodyHidden &&
-        objectsCollapsedState.layer > panelHeights.layer &&
-        sectionsRestored &&
-        collapsed &&
-        restored,
+        Math.abs(objectsCollapsedState.layer - panelHeights.layer) <= 1 &&
+        objectsCollapsedState.bgTop === panelHeights.bgTop &&
+        objectsCollapsedState.canvasWidth === panelHeights.canvasWidth &&
+        sectionsRestored.layer &&
+        sectionsRestored.body &&
+        sectionsRestored.bgTop === base.bgTop &&
+        collapsed.rail &&
+        collapsed.expand &&
+        collapsed.contentHidden &&
+        collapsed.width <= 60 &&
+        collapsed.canvasWidth > beforeWhole.canvasWidth + 40 &&
+        restored.sidebar &&
+        restored.tabs &&
+        restored.layers &&
+        restored.bgTop === base.bgTop &&
+        Math.abs(restored.canvasWidth - beforeWhole.canvasWidth) <= 2 &&
+        propsCollapse.button &&
+        propsCollapse.body &&
+        propsCollapsed.bodyHidden &&
+        propsCollapsed.header &&
+        propsCollapsed.button &&
+        propsCollapsed.expanded &&
+        propsRestored &&
+        paletteBase.panel &&
+        paletteBase.collapse &&
+        paletteBase.rows >= 2 &&
+        paletteCollapsed.expanded &&
+        paletteCollapsed.rowsHidden &&
+        paletteCollapsed.popoverHidden &&
+        paletteCollapsed.expand &&
+        paletteRestored.rows >= 2 &&
+        paletteRestored.collapse,
       base,
       allState,
       backState,
@@ -6510,8 +6655,15 @@ async function runSmokeFlow(win, smokeErrors) {
       layersCollapsedState,
       objectsCollapsedState,
       sectionsRestored,
+      beforeWhole,
       collapsed,
-      restored
+      restored,
+      propsCollapse,
+      propsCollapsed,
+      propsRestored,
+      paletteBase,
+      paletteCollapsed,
+      paletteRestored
     };
   } catch (error) {
     layersPanel = { ok: false, error: error instanceof Error ? error.message : String(error) };

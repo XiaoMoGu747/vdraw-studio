@@ -11,6 +11,8 @@ interface ColorPanelProps {
   onChangeStroke: (color: string | null) => void;
   /** 收窄态点击色块时先展开左侧栏，保证原位调色板有足够宽度。 */
   onRequestExpand?: () => void;
+  /** 左侧栏已收窄为 46px 色条：色块本身就是入口，不再叠加调色板整体收起。 */
+  compact?: boolean;
 }
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
@@ -163,12 +165,16 @@ export function ColorPanel({
   stroke,
   onChangeFill,
   onChangeStroke,
-  onRequestExpand
+  onRequestExpand,
+  compact = false
 }: ColorPanelProps) {
   const [mode, setMode] = useState<ColorMode>('palette');
   const [target, setTarget] = useState<Target>('fill');
   const [recent, setRecent] = useState<string[]>(readRecent);
   const [open, setOpen] = useState(false);
+  // 调色板整体收起：隐藏全部内容（含已展开的取色浮层），只保留展开入口；
+  // 与左上角“展开/收起取色浮层”的局部收起是两套行为。
+  const [collapsed, setCollapsed] = useState(false);
   const lastApplied = useRef<string | null>(null);
 
   const activeColor = target === 'fill' ? fill : stroke;
@@ -300,8 +306,37 @@ export function ColorPanel({
     );
   };
 
+  // 整体收起：隐藏填充/描边、最近色与取色浮层，只留一行展开入口；
+  // 收窄态（46px 色条）以色块本身为入口，不叠加这层收起。
+  if (collapsed && !compact) {
+    return (
+      <div
+        className="color-panel color-panel--collapsed"
+        data-testid="color-panel"
+        data-collapsed="true"
+      >
+        <div className="palette-bar palette-bar--collapsed">
+          <Icon name="palette" size={13} />
+          <span className="palette-bar__title">调色板</span>
+          <span className="palette-bar__collapsed-hint">已整体收起</span>
+          <button
+            type="button"
+            className="palette-expand"
+            data-testid="color-panel-expand"
+            title="整体展开调色板（恢复全部内容）"
+            aria-label="整体展开调色板"
+            aria-expanded={false}
+            onClick={() => setCollapsed(false)}
+          >
+            <Icon name="chevronDown" size={13} />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="color-panel" data-testid="color-panel">
+    <div className="color-panel" data-testid="color-panel" data-collapsed="false">
       <div className="palette-bar">
         {/* 展开按钮放在左上角：与标题同排，收缩态也保持同一位置。 */}
         <div className="palette-bar__head">
@@ -309,8 +344,8 @@ export function ColorPanel({
             type="button"
             className={`palette-expand${open ? ' is-open' : ''}`}
             data-testid="color-expand"
-            title={open ? '收起调色板' : '展开调色板'}
-            aria-label={open ? '收起调色板' : '展开调色板'}
+            title={open ? '收起取色浮层' : '展开取色浮层'}
+            aria-label={open ? '收起取色浮层' : '展开取色浮层'}
             aria-expanded={open}
             onClick={() => {
               if (!open) onRequestExpand?.();
@@ -320,6 +355,17 @@ export function ColorPanel({
             <Icon name="chevronDown" size={13} />
           </button>
           <span className="palette-bar__title">调色板</span>
+          <button
+            type="button"
+            className="palette-collapse"
+            data-testid="color-panel-collapse"
+            title="整体收起调色板（隐藏全部内容，保留展开入口）"
+            aria-label="整体收起调色板"
+            aria-expanded={true}
+            onClick={() => setCollapsed(true)}
+          >
+            <Icon name="chevronDown" size={13} className="rotate-180" />
+          </button>
         </div>
 
         {(['fill', 'stroke'] as const).map((which) => {

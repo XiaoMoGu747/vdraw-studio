@@ -18,6 +18,50 @@
   border-left: 1px solid var(--border);
 }
 
+/* 整体收起：面板宽度让给画布，只保留一条可点击的展开窄轨。 */
+.right-panel.right-sidebar--rail {
+  width: var(--right-rail-w);
+}
+
+.right-sidebar__rail-expand {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 0;
+  color: var(--text-3);
+  background: var(--surface-1);
+  border: 0;
+  cursor: pointer;
+  transition: color var(--motion-2) ease, background var(--motion-2) ease;
+}
+
+.right-sidebar__rail-expand:hover {
+  color: var(--accent-text);
+  background: var(--accent-soft);
+}
+
+.right-sidebar__rail-label {
+  writing-mode: vertical-rl;
+  letter-spacing: 0.16em;
+  font-size: var(--fs-2xs);
+  font-weight: 600;
+  color: inherit;
+}
+
+/* 面板主体保持挂载：整体收起只隐藏，展开时无需重建 DOM。 */
+.right-sidebar__main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.right-sidebar--rail .right-sidebar__main {
+  display: none;
+}
+
 .appearance-panel__body {
   flex: 1;
   min-height: 0;
@@ -128,15 +172,11 @@
   overflow: hidden;
 }
 
-.layers-panel.is-objects-collapsed .layer-section {
-  flex: 1 1 auto;
-  max-height: none;
-}
-
-.layers-panel.is-objects-collapsed .layer-list {
-  max-height: none;
-}
-
+/*
+ * 对象区局部收起时只让对象区自己变矮：
+ * 图层区保持原有高度，背景行不会因为剩余空间被它吃掉而下移。
+ * 收起腾出的高度留在面板底部，不影响画布宽度（宽度只由整体收起改变）。
+ */
 .objects-section__body .object-list {
   min-height: 0;
 }
@@ -211,7 +251,9 @@
   border-top: none;
 }
 
-.props-inline--empty {
+/* 空态也要保留表头（含属性区局部收起按钮），因此只让内容区居中。 */
+.props-inline__body--empty {
+  display: flex;
   align-items: center;
   justify-content: center;
 }
@@ -243,8 +285,21 @@
 }
 
 .props-inline__actions {
-  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 2px;
   flex: none;
+}
+
+.props-inline__menu-anchor {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.props-inline__collapse.is-collapsed {
+  color: var(--accent-text);
+  background: var(--accent-soft);
 }
 
 .props-inline__more {
@@ -583,16 +638,6 @@
   opacity: 0.55;
 }
 
-.layer-row__chevron {
-  width: 18px;
-  min-height: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-3);
-  flex: none;
-}
-
 .layer-row__toggle {
   width: 24px;
   height: 24px;
@@ -740,7 +785,6 @@
 }
 
 .object-row__chevron.is-collapsed svg,
-.layer-row__chevron.is-collapsed svg,
 .object-collapse.is-collapsed svg {
   transform: rotate(-90deg);
 }
@@ -811,14 +855,6 @@
 
 .object-collapse svg {
   transition: transform var(--motion-2) ease;
-}
-
-.objects-empty--collapsed {
-  gap: 6px;
-}
-
-.objects-empty--collapsed .btn {
-  margin-top: 6px;
 }
 
 .object-row__name {
@@ -1589,19 +1625,7 @@
   box-shadow: inset 0 0 0 1.5px rgba(63, 109, 240, 0.45);
 }
 
-.layer-row__chevron {
-  padding: 0;
-  background: transparent;
-}
-
-.layer-row__chevron.is-collapsed {
-  transform: rotate(-90deg);
-}
-
-.layer-row__chevron--empty {
-  height: 13px;
-}
-
+/* 图层行不再有独立展开箭头：文件夹整行点击切换，普通图层只切换当前图层。 */
 .layer-row--folder {
   background: var(--bg-panel);
   border-color: var(--border);

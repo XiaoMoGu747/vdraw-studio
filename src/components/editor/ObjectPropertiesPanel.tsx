@@ -38,7 +38,16 @@ const ALIGN_ACTIONS = [
   { mode: 'bottom', icon: 'alignBottom', label: '底对齐' }
 ] as const;
 
-export function ObjectPropertiesPanel() {
+interface ObjectPropertiesPanelProps {
+  /** 属性区局部收起：只隐藏属性字段，表头保留展开入口，面板宽度不变。 */
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
+}
+
+export function ObjectPropertiesPanel({
+  collapsed,
+  onToggleCollapsed
+}: ObjectPropertiesPanelProps) {
   const doc = useAppStore((state) => state.doc);
   const selection = useAppStore((state) => state.selection);
   const updateDoc = useAppStore((state) => state.updateDoc);
@@ -64,6 +73,13 @@ export function ObjectPropertiesPanel() {
     .map((id) => getObject(doc, id))
     .filter((obj): obj is SceneObject => Boolean(obj));
   const primary = selectedObjects[0] ?? null;
+  const objectTypeLabel = primary
+    ? primary.type === 'group'
+      ? isBenzeneGroup(primary)
+        ? '苯环'
+        : '编组'
+      : primary.name
+    : '未选择对象';
   // 变换区与画布选框必须用同一个局部盒：单对象取“未旋转盒 + 旋转角”，多选取轴对齐包围盒。
   // 用 selectionBounds（旋转后的包围盒）会让旋转 30° 的矩形在面板里显示成 404×360，
   // 而改宽高又按本地盒缩放，读数与结果对不上。
@@ -185,15 +201,48 @@ export function ObjectPropertiesPanel() {
     return () => document.removeEventListener('pointerdown', close);
   }, [menuOpen]);
 
+  const collapseButton = (
+    <button
+      type="button"
+      className={`icon-btn icon-btn--sm props-inline__collapse${collapsed ? ' is-collapsed' : ''}`}
+      data-testid="properties-section-collapse"
+      title={
+        collapsed
+          ? '局部展开属性区（恢复全部属性字段）'
+          : '局部收起属性区（只隐藏属性字段，面板宽度不变）'
+      }
+      aria-label={collapsed ? '局部展开属性区' : '局部收起属性区'}
+      aria-expanded={!collapsed}
+      onClick={() => {
+        setMenuOpen(false);
+        onToggleCollapsed();
+      }}
+    >
+      <Icon name="chevronDown" size={14} className={collapsed ? 'rotate-180' : undefined} />
+    </button>
+  );
+
   // 常驻 Inspector：不拦截 Esc，Esc 始终交还给画布（取消操作 / 清空选择 / 退出工具）。
   if (!primary) {
     return (
-      <section className="props-inline props-inline--empty" data-testid="object-properties-empty">
-        <div className="props-empty">
-          <Icon name="properties" size={20} />
-          <p>未选择对象</p>
-          <span>在画布或图层列表中选择对象后，这里会显示几何、文本与化学属性。</span>
-        </div>
+      <section
+        className={`props-inline props-inline--empty${collapsed ? ' is-collapsed' : ''}`}
+        data-testid="object-properties-empty"
+        data-collapsed={collapsed ? 'true' : 'false'}
+      >
+        <header className="props-inline__head">
+          <span className="props-inline__type">未选择对象</span>
+          <div className="props-inline__actions">{collapseButton}</div>
+        </header>
+        {!collapsed ? (
+          <div className="props-inline__body props-inline__body--empty">
+            <div className="props-empty">
+              <Icon name="properties" size={20} />
+              <p>未选择对象</p>
+              <span>在画布或图层列表中选择对象后，这里会显示几何、文本与化学属性。</span>
+            </div>
+          </div>
+        ) : null}
       </section>
     );
   }
@@ -382,55 +431,56 @@ export function ObjectPropertiesPanel() {
     applyTextPatch({ text: value });
   };
 
-  const objectTypeLabel =
-    primary.type === 'group'
-      ? isBenzeneGroup(primary)
-        ? '苯环'
-        : '编组'
-      : primary.name;
-
   return (
-    <section className="props-inline" data-testid="object-properties">
+    <section
+      className={`props-inline${collapsed ? ' is-collapsed' : ''}`}
+      data-testid="object-properties"
+      data-collapsed={collapsed ? 'true' : 'false'}
+    >
       <header className="props-inline__head">
         <span className="props-inline__type" title={objectTypeLabel}>
           {objectTypeLabel}
           {selection.length > 1 ? <em>共 {selection.length} 个</em> : null}
         </span>
-        <div className="props-inline__actions" data-props-menu>
-          <button
-            type="button"
-            className="icon-btn icon-btn--sm"
-            title="更多操作"
-            aria-haspopup="menu"
-            aria-expanded={menuOpen}
-            data-testid="properties-menu"
-            onClick={() => setMenuOpen((value) => !value)}
-          >
-            <span className="props-inline__more" aria-hidden="true">
-              ⋯
-            </span>
-          </button>
-          {menuOpen ? (
-            <div className="props-inline__menu" role="menu">
-              <button type="button" role="menuitem" onClick={deleteSelection}>
-                <Icon name="trash" size={13} />
-                删除对象
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  setMenuOpen(false);
-                  useAppStore.getState().clearSelection();
-                }}
-              >
-                <Icon name="close" size={13} />
-                取消选择
-              </button>
-            </div>
-          ) : null}
+        <div className="props-inline__actions">
+          <div className="props-inline__menu-anchor" data-props-menu>
+            <button
+              type="button"
+              className="icon-btn icon-btn--sm"
+              title="更多操作"
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              data-testid="properties-menu"
+              onClick={() => setMenuOpen((value) => !value)}
+            >
+              <span className="props-inline__more" aria-hidden="true">
+                ⋯
+              </span>
+            </button>
+            {menuOpen ? (
+              <div className="props-inline__menu" role="menu">
+                <button type="button" role="menuitem" onClick={deleteSelection}>
+                  <Icon name="trash" size={13} />
+                  删除对象
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    useAppStore.getState().clearSelection();
+                  }}
+                >
+                  <Icon name="close" size={13} />
+                  取消选择
+                </button>
+              </div>
+            ) : null}
+          </div>
+          {collapseButton}
         </div>
       </header>
+      {!collapsed ? (
       <div className="props-inline__body">
         <div className="object-props">
         <Section title="对齐与分布">
@@ -991,6 +1041,7 @@ export function ObjectPropertiesPanel() {
 
         </div>
       </div>
+      ) : null}
     </section>
   );
 }

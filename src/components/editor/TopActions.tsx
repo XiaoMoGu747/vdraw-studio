@@ -128,7 +128,7 @@ export function TopActions() {
         <button
           type="button"
           className={`icon-btn icon-btn--sm${rightDockOpen && !focusCanvas ? ' is-active' : ''}`}
-          title="显示/隐藏右侧图层与属性"
+          title="整体展开/收起右侧图层与属性（收起为窄轨，画布回收宽度）"
           aria-pressed={rightDockOpen && !focusCanvas}
           data-testid="toggle-right-dock"
           onClick={toggleRightDock}

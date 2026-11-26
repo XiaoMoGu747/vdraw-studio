@@ -18,7 +18,6 @@ const RAIL_LABEL_HINT_KEY = 'vdraw.hint.rail-labels.v1';
 export function EditorView() {
   useEditorShortcuts();
   const leftDockOpen = useAppStore((state) => state.leftDockOpen);
-  const rightDockOpen = useAppStore((state) => state.rightDockOpen);
   const focusCanvas = useAppStore((state) => state.focusCanvas);
   const setLeftDockOpen = useAppStore((state) => state.setLeftDockOpen);
   const notify = useAppStore((state) => state.notify);
@@ -73,7 +72,7 @@ export function EditorView() {
         <ToolRail />
         {!focusCanvas ? <LeftDock collapsed={!leftDockOpen} /> : null}
         <CanvasStage />
-        {!focusCanvas && rightDockOpen ? <RightSidebar /> : null}
+        {!focusCanvas ? <RightSidebar /> : null}
       </div>
       <StatusBar />
       <ChemReportModal />
