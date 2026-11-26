@@ -855,6 +855,28 @@ html[data-theme='dark'] .start-page::before {
   flex: none;
 }
 
+.recent-item.is-renaming {
+  border-color: var(--blue-200);
+  background: var(--accent-soft);
+}
+
+.recent-item__main--edit {
+  cursor: default;
+}
+
+.recent-item__rename {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--blue-200);
+  border-radius: var(--radius-sm);
+  background: var(--neutral-0);
+  color: var(--ink-900);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
 .recent-item__delete {
   width: 30px;
   height: 30px;

@@ -60,6 +60,24 @@ async function runSmokeFlow(win, smokeErrors) {
   );
   await screenshot('smoke-start.png');
 
+  // 启动页右上角关闭：确认框必须走统一 Modal，可取消并留在当前页。
+  await readDom(win, `document.querySelector('.launcher-icon-btn--danger')?.click()`);
+  await sleep(220);
+  const startCloseDialog = await readDom(
+    win,
+    `(() => ({
+      open: Boolean(document.querySelector('[data-testid="start-close-confirm"]')),
+      modal: Boolean(document.querySelector('.modal')),
+      styled: Boolean(document.querySelector('.confirm-dialog__icon'))
+    }))()`
+  );
+  await readDom(win, `document.querySelector('[data-testid="start-close-confirm-cancel"]')?.click()`);
+  await sleep(180);
+  const startCloseCanceled = await readDom(
+    win,
+    `!document.querySelector('[data-testid="start-close-confirm"]')`
+  );
+
   let recentAfterDelete = null;
   if (startInfo.recentRows > 0) {
     await readDom(win, `document.querySelector('[data-testid="recent-delete"]').click()`);
@@ -4086,7 +4104,14 @@ async function runSmokeFlow(win, smokeErrors) {
       afterCircle,
       circleInfo
     },
-    start: { ...startInfo, recentAfterDelete, widthClearable, widthAfterClear },
+    start: {
+      ...startInfo,
+      recentAfterDelete,
+      widthClearable,
+      widthAfterClear,
+      closeDialog: startCloseDialog,
+      closeCanceled: startCloseCanceled
+    },
     context: { contextInfo, propertiesInfo, modalClosed },
     appearance: {
       colorPanelOpened,
@@ -5784,6 +5809,13 @@ async function runSmokeFlow(win, smokeErrors) {
       input.dispatchEvent(new Event('input', { bubbles: true }));
       return true;
     })()`;
+  const commitInput = (selector) =>
+    `(() => {
+      const input = document.querySelector('${selector}');
+      if (!input) return false;
+      input.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+      return true;
+    })()`;
   try {
     await selectTool('bond');
     await sleep(260);
@@ -5815,8 +5847,11 @@ async function runSmokeFlow(win, smokeErrors) {
     await selectTool('bond');
     await sleep(260);
     await readDom(win, setInputValue('[data-testid="chem-bond-length"]', 60));
+    await readDom(win, commitInput('[data-testid="chem-bond-length"]'));
     await readDom(win, setInputValue('[data-testid="chem-bond-width"]', 3));
+    await readDom(win, commitInput('[data-testid="chem-bond-width"]'));
     await readDom(win, setInputValue('[data-testid="chem-bond-spacing"]', 6));
+    await readDom(win, commitInput('[data-testid="chem-bond-spacing"]'));
     await sleep(180);
     const changedParams = await readDom(
       win,
@@ -5971,6 +6006,52 @@ async function runSmokeFlow(win, smokeErrors) {
         fixed: Boolean(document.querySelector('[data-testid="bond-fixed"]'))
       }))()`
     );
+    const focusState = await readDom(
+      win,
+      `(() => {
+        const input = document.querySelector('[data-testid="chem-bond-length"]');
+        if (!input) return null;
+        input.focus();
+        input.select();
+        return { focused: document.activeElement === input };
+      })()`
+    );
+    const clearedState = await readDom(
+      win,
+      `(() => {
+        const input = document.querySelector('[data-testid="chem-bond-length"]');
+        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+        setter.call(input, '');
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        return input.value === '';
+      })()`
+    );
+    await readDom(
+      win,
+      `(() => {
+        const input = document.querySelector('[data-testid="chem-bond-length"]');
+        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+        setter.call(input, '80');
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        return true;
+      })()`
+    );
+    await sleep(100);
+    await readDom(
+      win,
+      `document.querySelector('[data-testid="chem-bond-length"]')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))`
+    );
+    await sleep(200);
+    const enterCommit = await readDom(
+      win,
+      `(() => {
+        const input = document.querySelector('[data-testid="chem-bond-length"]');
+        return { value: input?.value ?? null, focused: document.activeElement === input };
+      })()`
+    );
+    await readDom(win, `document.querySelector('[data-testid="chem-bond-defaults"]')?.click()`);
+    await sleep(180);
+
     await readDom(win, `document.querySelector('[data-testid="chem-bond-uniform"]')?.click()`);
     await sleep(140);
     const uniformOn = await readDom(
@@ -5978,6 +6059,7 @@ async function runSmokeFlow(win, smokeErrors) {
       `document.querySelector('[data-testid="chem-bond-uniform"]')?.getAttribute('aria-pressed') === 'true'`
     );
     await readDom(win, setInputValue('[data-testid="chem-bond-length"]', 80));
+    await readDom(win, commitInput('[data-testid="chem-bond-length"]'));
     await sleep(200);
     const uniformScaled = await readDom(
       win,
@@ -6055,6 +6137,10 @@ async function runSmokeFlow(win, smokeErrors) {
         defaults.spacing === '4.2' &&
         defaults.oldOptions === 0 &&
         defaults.fixed &&
+        focusState?.focused &&
+        clearedState &&
+        enterCommit.value === '80' &&
+        enterCommit.focused === false &&
         uniformOn &&
         uniformScaled.length === '80' &&
         uniformScaled.width === '4.4' &&
@@ -6074,6 +6160,9 @@ async function runSmokeFlow(win, smokeErrors) {
         ranges.reset &&
         (cleanupToast.includes('已整理') || cleanupToast.includes('已检查')),
       defaults,
+      focusState,
+      clearedState,
+      enterCommit,
       uniformOn,
       uniformScaled,
       fixedOn,
@@ -6085,6 +6174,85 @@ async function runSmokeFlow(win, smokeErrors) {
     chemExtras = { ok: false, error: error instanceof Error ? error.message : String(error) };
   }
   console.log('CHEM_EXTRAS ' + JSON.stringify(chemExtras));
+
+  // ---- 文档重命名与关闭确认：双击标题、右键最近文件、统一 Modal ----
+  let uiPolish = { ok: false };
+  try {
+    await readDom(
+      win,
+      `document.querySelector('[data-testid="doc-title"]')?.dispatchEvent(
+        new MouseEvent('dblclick', { bubbles: true, cancelable: true })
+      )`
+    );
+    await sleep(180);
+    const titleEditOpen = await readDom(
+      win,
+      `Boolean(document.querySelector('[data-testid="doc-title-input"]'))`
+    );
+    await readDom(
+      win,
+      `(() => {
+        const input = document.querySelector('[data-testid="doc-title-input"]');
+        if (!input) return false;
+        input.focus();
+        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+        setter.call(input, '冒烟画布-UI');
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        return true;
+      })()`
+    );
+    await sleep(100);
+    await readDom(
+      win,
+      `document.querySelector('[data-testid="doc-title-input"]')?.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
+      )`
+    );
+    await sleep(220);
+    const renamed = await readDom(
+      win,
+      `({
+        title: document.querySelector('[data-testid="doc-title"]')?.textContent || null,
+        editing: Boolean(document.querySelector('[data-testid="doc-title-input"]'))
+      })`
+    );
+
+    await readDom(win, `document.querySelector('.window-btn--close')?.click()`);
+    await sleep(220);
+    const leaveDialog = await readDom(
+      win,
+      `(() => ({
+        open: Boolean(document.querySelector('[data-testid="leave-document-confirm"]')),
+        modal: Boolean(document.querySelector('.confirm-dialog__icon'))
+      }))()`
+    );
+    await readDom(
+      win,
+      `document.querySelector('[data-testid="leave-document-confirm-cancel"]')?.click()`
+    );
+    await sleep(180);
+    const leaveCanceled = await readDom(
+      win,
+      `!document.querySelector('[data-testid="leave-document-confirm"]')`
+    );
+
+    uiPolish = {
+      ok:
+        titleEditOpen &&
+        renamed.title === '冒烟画布-UI' &&
+        !renamed.editing &&
+        leaveDialog.open &&
+        leaveDialog.modal &&
+        leaveCanceled,
+      titleEditOpen,
+      renamed,
+      leaveDialog,
+      leaveCanceled
+    };
+  } catch (error) {
+    uiPolish = { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+  console.log('UI_POLISH ' + JSON.stringify(uiPolish));
   console.log('SMOKE_CONSOLE_MESSAGES ' + JSON.stringify(smokeErrors));
 
   const failed =
@@ -6108,6 +6276,10 @@ async function runSmokeFlow(win, smokeErrors) {
     !startInfo.squareCards ||
     startInfo.deleteButtons !== startInfo.recentRows ||
     startInfo.launcherButtons !== 3 ||
+    !startCloseDialog.open ||
+    !startCloseDialog.modal ||
+    !startCloseDialog.styled ||
+    !startCloseCanceled ||
     (startInfo.recentRows > 0 && !startInfo.recentHasDesc) ||
     (startInfo.recentRows > 0 && recentAfterDelete !== startInfo.recentRows - 1) ||
     editorInfo.route !== 'editor' ||
@@ -6134,10 +6306,10 @@ async function runSmokeFlow(win, smokeErrors) {
     editorInfo.scrollOverflowX > 1 ||
     editorInfo.scrollOverflowY > 1 ||
     !colorPanelOpened.open ||
-    !colorPanelOpened.indicator ||
+    colorPanelOpened.indicator ||
     !colorModes.fillNone ||
     !colorModes.strokeNone ||
-    !colorPanelOpened.indicatorBetween ||
+    colorPanelOpened.indicatorBetween ||
     !colorPanelOpened.titleCentered ||
     !colorPanelOpened.popoverGone ||
     afterRect !== 1 ||
@@ -6651,6 +6823,7 @@ async function runSmokeFlow(win, smokeErrors) {
     !batchImport.ok ||
     !chemFocus.ok ||
     !chemExtras.ok ||
+    !uiPolish.ok ||
     smokeErrors.length > 0;
 
   if (failed) {

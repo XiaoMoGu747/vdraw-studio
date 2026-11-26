@@ -79,7 +79,7 @@ export function TopActions() {
         className="icon-btn icon-btn--sm"
         data-testid="back-to-start"
         title="返回启动页（未保存的修改会先确认）"
-        onClick={goToStart}
+        onClick={() => goToStart()}
       >
         <Icon name="logo" size={16} />
       </button>

@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import type { TemplateId } from '../../core/document';
 import { Icon } from '../ui/Icon';
+import { ConfirmDialog } from '../ui/ConfirmDialog';
 import type { IconName } from '../../types/ui';
 import { useFileActions } from '../editor/useFileActions';
 import { HeroArtwork } from './HeroArtwork';
@@ -64,6 +65,7 @@ const USE_CASES: UseCase[] = [
 
 export function StartPage() {
   const recent = useAppStore((state) => state.recent);
+  const renameRecent = useAppStore((state) => state.renameRecent);
   const removeRecent = useAppStore((state) => state.removeRecent);
   const notify = useAppStore((state) => state.notify);
   const startDocumentWith = useAppStore((state) => state.startDocumentWith);
@@ -72,11 +74,34 @@ export function StartPage() {
   const bridge = window.vdraw;
   const [maximized, setMaximized] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [closeConfirmOpen, setCloseConfirmOpen] = useState(false);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState('');
+  const renameCancelled = useRef(false);
 
   useEffect(() => {
     if (!bridge) return;
     return bridge.window.onStateChange((state) => setMaximized(state.maximized));
   }, [bridge]);
+
+  const startRecentRename = (id: string, name: string) => {
+    renameCancelled.current = false;
+    setRenamingId(id);
+    setRenameDraft(name);
+  };
+
+  const finishRecentRename = () => {
+    if (!renamingId) return;
+    const id = renamingId;
+    setRenamingId(null);
+    if (renameCancelled.current) {
+      renameCancelled.current = false;
+      setRenameDraft('');
+      return;
+    }
+    renameRecent(id, renameDraft);
+    setRenameDraft('');
+  };
 
   return (
     <div className="start-page start-page--launcher">
@@ -118,7 +143,7 @@ export function StartPage() {
             title="关闭窗口"
             aria-label="关闭窗口"
             disabled={!bridge}
-            onClick={() => void bridge?.window.close()}
+            onClick={() => setCloseConfirmOpen(true)}
           >
             <Icon name="close" size={15} />
           </button>
@@ -231,43 +256,84 @@ export function StartPage() {
 
           {recent.length > 0 ? (
             <ul className="recent-list recent-list--launcher">
-              {recent.map((item) => (
-                <li className="recent-item" key={item.id}>
-                  <button
-                    type="button"
-                    className="recent-item__main"
-                    data-testid="recent-row"
-                    onClick={() => {
-                      if (item.path) void fileActions.openPath(item.path);
-                      else notify('该记录没有关联本地文件，请使用“打开画布”', 'warn');
+              {recent.map((item) => {
+                const renaming = renamingId === item.id;
+                return (
+                  <li
+                    className={`recent-item${renaming ? ' is-renaming' : ''}`}
+                    key={item.id}
+                    onContextMenu={(event) => {
+                      event.preventDefault();
+                      startRecentRename(item.id, item.name);
                     }}
                   >
-                    <span className="recent-item__icon">
-                      <Icon name="file" size={16} />
-                    </span>
-                    <span className="recent-item__body">
-                      <strong>{item.name}</strong>
-                      <span>
-                        {item.templateName} · {item.sizeLabel} · {formatRecentDate(item.openedAt)}
-                      </span>
-                    </span>
-                    <Icon name="chevronRight" size={14} className="recent-item__arrow" />
-                  </button>
-                  <button
-                    type="button"
-                    className="recent-item__delete"
-                    data-testid="recent-delete"
-                    title="删除该记录"
-                    aria-label={`删除 ${item.name}`}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      removeRecent(item.id);
-                    }}
-                  >
-                    <Icon name="trash" size={14} />
-                  </button>
-                </li>
-              ))}
+                    {renaming ? (
+                      <div className="recent-item__main recent-item__main--edit">
+                        <span className="recent-item__icon">
+                          <Icon name="file" size={16} />
+                        </span>
+                        <input
+                          className="recent-item__rename"
+                          data-testid="recent-rename-input"
+                          value={renameDraft}
+                          aria-label="重命名最近文件"
+                          autoFocus
+                          onFocus={(event) => event.currentTarget.select()}
+                          onChange={(event) => setRenameDraft(event.target.value)}
+                          onBlur={finishRecentRename}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') {
+                              event.preventDefault();
+                              event.currentTarget.blur();
+                            } else if (event.key === 'Escape') {
+                              renameCancelled.current = true;
+                              event.currentTarget.blur();
+                            }
+                          }}
+                        />
+                      </div>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          className="recent-item__main"
+                          data-testid="recent-row"
+                          title={`${item.name} · 右键重命名`}
+                          onClick={() => {
+                            if (item.path) void fileActions.openPath(item.path);
+                            else notify('该记录没有关联本地文件，请使用“打开画布”', 'warn');
+                          }}
+                        >
+                          <span className="recent-item__icon">
+                            <Icon name="file" size={16} />
+                          </span>
+                          <span className="recent-item__body">
+                            <strong>{item.name}</strong>
+                            <span>
+                              {item.templateName} · {item.sizeLabel} ·{' '}
+                              {formatRecentDate(item.openedAt)}
+                            </span>
+                          </span>
+                          <Icon name="chevronRight" size={14} className="recent-item__arrow" />
+                        </button>
+                        <button
+                          type="button"
+                          className="recent-item__delete"
+                          data-testid="recent-delete"
+                          title="删除该记录"
+                          aria-label={`删除 ${item.name}`}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            removeRecent(item.id);
+                          }}
+                        >
+                          <Icon name="trash" size={14} />
+                        </button>
+                      </>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           ) : (
             <div className="recent-empty recent-empty--launcher">
@@ -282,6 +348,22 @@ export function StartPage() {
       </main>
 
       <NewCanvasDialog open={dialogOpen} onClose={() => setDialogOpen(false)} />
+      {closeConfirmOpen ? (
+        <ConfirmDialog
+          title="关闭 VDraw Studio"
+          message="确定要关闭 VDraw Studio 吗？"
+          hint="最近文件记录会保留在本机，下次打开仍可继续。"
+          confirmLabel="关闭应用"
+          cancelLabel="取消"
+          tone="danger"
+          testId="start-close-confirm"
+          onConfirm={() => {
+            setCloseConfirmOpen(false);
+            void bridge?.window.close();
+          }}
+          onCancel={() => setCloseConfirmOpen(false)}
+        />
+      ) : null}
 
       <footer className="start-footer">
         <span>Electron{bridge?.versions.electron ? ` ${bridge.versions.electron}` : ''} · React · TypeScript</span>

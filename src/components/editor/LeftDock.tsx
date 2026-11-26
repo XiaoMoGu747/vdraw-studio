@@ -12,7 +12,6 @@ import { ToolOptions } from './ToolOptions';
  */
 export function LeftDock({ collapsed = false }: { collapsed?: boolean }) {
   const activeTool = useAppStore((state) => state.activeTool);
-  const setLeftDockOpen = useAppStore((state) => state.setLeftDockOpen);
   const setTool = useAppStore((state) => state.setTool);
   const doc = useAppStore((state) => state.doc);
   const selection = useAppStore((state) => state.selection);
@@ -153,39 +152,11 @@ export function LeftDock({ collapsed = false }: { collapsed?: boolean }) {
           data-testid="left-dock-brush"
           title="展开画笔大小与不透明度"
           aria-label="展开画笔大小与不透明度"
-          onClick={() => setLeftDockOpen(true)}
+          onClick={() => useAppStore.getState().setLeftDockOpen(true)}
         >
           <Icon name="brush" size={16} />
         </button>
       ) : null}
-
-      <button
-        type="button"
-        className="left-dock__expand"
-        data-testid="left-dock-expand"
-        title={collapsed ? '展开调色板' : '收窄为左侧色条'}
-        aria-label={collapsed ? '展开调色板' : '收窄为左侧色条'}
-        onClick={() => setLeftDockOpen(collapsed)}
-      >
-        <Icon name="chevronRight" size={13} />
-        <span>收起</span>
-      </button>
-
-      <div className="dock-block dock-block--indicator">
-        <span
-          className="dock-color-square"
-          data-testid="brush-color-indicator"
-          style={{ background: (isBrushTool ? brushColor : strokeColor) ?? '#1b1b1b' }}
-          title="当前画笔颜色"
-        />
-        <div className="dock-block__label">
-          <strong>{isBrushTool ? '画笔颜色' : '描边颜色'}</strong>
-          <span data-testid="selection-count">
-            {(isBrushTool ? brushColor : strokeColor) ?? '#1B1B1B'}
-            {hasSelection && !isBrushTool ? ` · ${selection.length} 个选中` : ''}
-          </span>
-        </div>
-      </div>
 
       <div className="dock-block dock-block--sliders">
         <div className="dock-slider">

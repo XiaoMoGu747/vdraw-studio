@@ -71,6 +71,9 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  cursor: text;
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
 }
 
 .titlebar__doc {
@@ -79,6 +82,25 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.titlebar__doc:hover {
+  color: var(--accent-text);
+}
+
+.titlebar__doc-input {
+  width: 180px;
+  max-width: 28vw;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--blue-200);
+  border-radius: var(--radius-sm);
+  background: var(--neutral-0);
+  color: var(--ink-900);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
 }
 
 .titlebar__unsaved {
@@ -2039,10 +2061,8 @@ html[data-rail-labels='true'] .rail-btn::after {
 .left-dock--mini .palette-row__name,
 .left-dock--mini .palette-row__value,
 .left-dock--mini .palette-recent,
-.left-dock--mini .dock-block--indicator,
 .left-dock--mini .dock-block--sliders,
-.left-dock--mini .dock-tools,
-.left-dock--mini .left-dock__expand {
+.left-dock--mini .dock-tools {
   display: none;
 }
 
@@ -2062,54 +2082,6 @@ html[data-rail-labels='true'] .rail-btn::after {
 .left-dock__brush:hover {
   color: var(--accent-text);
   border-color: var(--blue-200);
-}
-
-/* 收窄按钮固定在栏底：带文字，避免被误看成滚动条。 */
-.left-dock__expand {
-  order: 99;
-  margin: auto 12px 12px;
-  height: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  flex: none;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
-  background: var(--neutral-0);
-  color: var(--text-3);
-  font-size: var(--fs-xs);
-}
-
-.left-dock__expand svg {
-  transform: rotate(180deg);
-}
-
-.left-dock__expand:hover {
-  color: var(--accent-text);
-  border-color: var(--blue-200);
-}
-
-.dock-block--indicator {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-}
-
-.dock-block--indicator .dock-block__label {
-  flex-direction: row;
-  align-items: baseline;
-  gap: 6px;
-}
-
-.dock-color-square {
-  width: 22px;
-  height: 22px;
-  border-radius: var(--radius-xs);
-  border: 1px solid rgba(22, 30, 48, 0.18);
-  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.55);
-  flex: none;
 }
 
 .dock-block {
@@ -2244,11 +2216,10 @@ html[data-rail-labels='true'] .rail-btn::after {
 }
 
 .dock-tools {
-  flex: 1;
-  min-height: 0;
+  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
-  padding-top: 12px;
+  padding: 12px 0;
 }
 
 .dock-tools__head {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { WheelEvent as ReactWheelEvent } from 'react';
 import { ARROW_PRESETS, ATOM_PRESETS, BOND_PRESETS } from '../../core/chemistry/presets';
 import { RING_TEMPLATES } from '../../core/chemistry/rings';
@@ -137,6 +137,81 @@ const CHEM_CATEGORIES = [
 ] as const;
 
 type FeatureKey = 'symmetry' | 'guides' | 'chem' | 'bucket' | 'shape' | 'text' | 'eraser';
+
+function formatMetric(value: number, decimals: number): string {
+  return decimals > 0 ? value.toFixed(decimals) : String(Math.round(value));
+}
+
+/**
+ * 化学参数输入：聚焦即全选，允许清空后重新输入；回车提交并失焦。
+ * type=number 仍保留步进箭头，但内部用字符串 draft 承接空值，避免一删就被重置。
+ */
+function ChemMetricInput({
+  testId,
+  label,
+  title,
+  value,
+  decimals,
+  min,
+  max,
+  step,
+  onCommit
+}: {
+  testId: string;
+  label: string;
+  title: string;
+  value: number;
+  decimals: number;
+  min: number;
+  max: number;
+  step: number;
+  onCommit: (value: number) => void;
+}) {
+  const [draft, setDraft] = useState(() => formatMetric(value, decimals));
+  const focused = useRef(false);
+  useEffect(() => {
+    if (!focused.current) setDraft(formatMetric(value, decimals));
+  }, [value, decimals]);
+  const commit = () => {
+    focused.current = false;
+    const next = Number(draft);
+    if (draft.trim() === '' || !Number.isFinite(next)) {
+      setDraft(formatMetric(value, decimals));
+      return;
+    }
+    onCommit(next);
+  };
+  return (
+    <label
+      className="mode-field mode-field--num chem-param-field"
+      title={title}
+    >
+      <span>{label}</span>
+      <input
+        type="number"
+        min={min}
+        max={max}
+        step={step}
+        inputMode="decimal"
+        data-testid={testId}
+        value={draft}
+        onFocus={(event) => {
+          focused.current = true;
+          event.currentTarget.select();
+        }}
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            event.currentTarget.blur();
+          }
+        }}
+        onBlur={commit}
+      />
+      <em>px</em>
+    </label>
+  );
+}
 
 /** 横栏比可视宽度长时，鼠标滚轮也能横向滑动（不必去拖底部细滚动条）。 */
 function scrollDockHorizontally(event: ReactWheelEvent<HTMLDivElement>) {
@@ -712,58 +787,39 @@ export function ToolModeBar() {
               >
                 <Icon name="undo" size={13} />
               </button>
-              <label
-                className="mode-field mode-field--num chem-param-field"
+              <ChemMetricInput
+                testId="chem-bond-length"
+                label="键长"
                 title={`后续新建化学键的键长（${CHEM_BOND_LENGTH_RANGE.min}–${CHEM_BOND_LENGTH_RANGE.max}px）`}
-              >
-                <span>键长</span>
-                <input
-                  type="number"
-                  min={CHEM_BOND_LENGTH_RANGE.min}
-                  max={CHEM_BOND_LENGTH_RANGE.max}
-                  step={1}
-                  data-testid="chem-bond-length"
-                  value={Math.round(bondLength)}
-                  onChange={(event) => setChemBondMetric('length', Number(event.target.value) || CHEM_BOND_LENGTH_DEFAULT)}
-                />
-                <em>px</em>
-              </label>
-              <label
-                className="mode-field mode-field--num chem-param-field"
+                value={bondLength}
+                decimals={0}
+                min={CHEM_BOND_LENGTH_RANGE.min}
+                max={CHEM_BOND_LENGTH_RANGE.max}
+                step={1}
+                onCommit={(value) => setChemBondMetric('length', value)}
+              />
+              <ChemMetricInput
+                testId="chem-bond-width"
+                label="键宽"
                 title={`后续新建化学键的键宽（${CHEM_BOND_WIDTH_RANGE.min}–${CHEM_BOND_WIDTH_RANGE.max}px）`}
-              >
-                <span>键宽</span>
-                <input
-                  type="number"
-                  min={CHEM_BOND_WIDTH_RANGE.min}
-                  max={CHEM_BOND_WIDTH_RANGE.max}
-                  step={0.1}
-                  data-testid="chem-bond-width"
-                  value={bondWidth.toFixed(1)}
-                  onChange={(event) =>
-                    setChemBondMetric('width', Number(event.target.value) || CHEM_BOND_WIDTH_DEFAULT)
-                  }
-                />
-                <em>px</em>
-              </label>
-              <label
-                className="mode-field mode-field--num chem-param-field"
+                value={bondWidth}
+                decimals={1}
+                min={CHEM_BOND_WIDTH_RANGE.min}
+                max={CHEM_BOND_WIDTH_RANGE.max}
+                step={0.1}
+                onCommit={(value) => setChemBondMetric('width', value)}
+              />
+              <ChemMetricInput
+                testId="chem-bond-spacing"
+                label="键距"
                 title={`双键 / 三键键距（${CHEM_BOND_SPACING_RANGE.min}–${CHEM_BOND_SPACING_RANGE.max}px）；后续新建结构使用`}
-              >
-                <span>键距</span>
-                <input
-                  type="number"
-                  min={CHEM_BOND_SPACING_RANGE.min}
-                  max={CHEM_BOND_SPACING_RANGE.max}
-                  step={0.1}
-                  data-testid="chem-bond-spacing"
-                  value={bondSpacing.toFixed(1)}
-                  onChange={(event) =>
-                    setChemBondMetric('spacing', Number(event.target.value) || CHEM_BOND_SPACING_DEFAULT)
-                  }
-                />
-                <em>px</em>
-              </label>
+                value={bondSpacing}
+                decimals={1}
+                min={CHEM_BOND_SPACING_RANGE.min}
+                max={CHEM_BOND_SPACING_RANGE.max}
+                step={0.1}
+                onCommit={(value) => setChemBondMetric('spacing', value)}
+              />
               <span className="mode-dock__divider" />
               <button
                 type="button"

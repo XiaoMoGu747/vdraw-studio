@@ -215,6 +215,60 @@ svg {
   border-color: var(--neutral-300);
 }
 
+.btn--danger {
+  background: var(--danger);
+  color: var(--on-accent);
+  box-shadow: var(--shadow-sm);
+}
+
+.btn--danger:hover {
+  filter: brightness(0.94);
+}
+
+.confirm-dialog {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 4px 0 2px;
+}
+
+.confirm-dialog__icon {
+  width: 36px;
+  height: 36px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--warning-soft);
+  color: var(--warning-text);
+}
+
+.confirm-dialog__icon.is-danger {
+  background: var(--danger-soft);
+  color: var(--danger-text);
+}
+
+.confirm-dialog__body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.confirm-dialog__body p {
+  margin: 0;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
+  color: var(--text);
+}
+
+.confirm-dialog__body em {
+  font-style: normal;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-normal);
+  color: var(--text-3);
+}
+
 .btn--lg {
   height: 44px;
   padding: 0 20px;

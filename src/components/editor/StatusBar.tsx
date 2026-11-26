@@ -61,6 +61,11 @@ export function StatusBar() {
         <span className="statusbar__coord">
           X {cursor ? formatNumber(cursor.x, 0) : '—'} · Y {cursor ? formatNumber(cursor.y, 0) : '—'}
         </span>
+        {selection.length > 0 ? (
+          <span className="statusbar__meta" data-testid="selection-count">
+            {selection.length} 个选中
+          </span>
+        ) : null}
         <span className="statusbar__meta">{objectCount} 个对象</span>
 
         {activeTool === 'brush' ? (

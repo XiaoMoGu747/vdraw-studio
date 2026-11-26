@@ -4,6 +4,7 @@ import { StartPage } from './components/start/StartPage';
 import { EditorView } from './components/editor/EditorView';
 import { ImportDialog } from './components/editor/ImportDialog';
 import { Toasts } from './components/ui/Toasts';
+import { ConfirmDialog } from './components/ui/ConfirmDialog';
 import { clearAutosave, readAutosave, writeAutosave } from './core/io/autosave';
 import type { VDrawDocument } from './types/document';
 
@@ -49,6 +50,7 @@ export default function App() {
   const showToolLabels = useAppStore((state) => state.showToolLabels);
   const theme = useAppStore((state) => state.theme);
   const resolvedTheme = useResolvedTheme(theme);
+  const [closeConfirmOpen, setCloseConfirmOpen] = useState(false);
 
   // 外观偏好直接挂到根节点，CSS 变量和动效规则无需逐组件传参。
   useEffect(() => {
@@ -119,18 +121,43 @@ export default function App() {
     }
     return bridge.app.onCloseRequest(() => {
       const store = useAppStore.getState();
-      const shouldClose =
-        !store.isDirty ||
-        window.confirm('当前文档有未保存的修改，关闭后这些修改会丢失。确定要关闭吗？');
-      if (shouldClose && store.isDirty) clearAutosave();
-      void bridge.app.respondClose(shouldClose);
+      if (!store.isDirty) {
+        void bridge.app.respondClose(true);
+        return;
+      }
+      setCloseConfirmOpen(true);
     });
   }, []);
+
+  const cancelClose = () => {
+    setCloseConfirmOpen(false);
+    void window.vdraw?.app.respondClose(false);
+  };
+
+  const confirmClose = () => {
+    setCloseConfirmOpen(false);
+    const store = useAppStore.getState();
+    if (store.isDirty) clearAutosave();
+    void window.vdraw?.app.respondClose(true);
+  };
 
   return (
     <>
       {route === 'start' ? <StartPage /> : <EditorView />}
       <ImportDialog />
+      {closeConfirmOpen ? (
+        <ConfirmDialog
+          title="关闭 VDraw Studio"
+          message="当前文档有未保存的修改，关闭后这些修改会丢失。"
+          hint="如需保留，请先取消并保存；关闭后自动恢复点也会被清除。"
+          confirmLabel="关闭应用"
+          cancelLabel="继续编辑"
+          tone="danger"
+          testId="app-close-confirm"
+          onConfirm={confirmClose}
+          onCancel={cancelClose}
+        />
+      ) : null}
       <Toasts />
     </>
   );

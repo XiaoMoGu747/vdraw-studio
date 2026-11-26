@@ -571,7 +571,8 @@ interface AppState {
   toggleClipToSelection: () => void;
   toggleAlphaLock: () => void;
   loadDocument: (doc: VDrawDocument, path: string, dirty?: boolean) => void;
-  goToStart: () => void;
+  /** force=true 时跳过未保存确认（由调用方先展示统一确认框）。 */
+  goToStart: (force?: boolean) => void;
   setTool: (tool: ToolId) => void;
   /** 取色完成后回到取色前的工具。 */
   restoreToolAfterEyedropper: () => void;
@@ -660,7 +661,11 @@ interface AppState {
   toggleLayerLock: (layerId: string) => void;
   setLayerBlendMode: (layerId: string, mode: LayerBlendMode) => void;
   markSaved: (path: string, name?: string) => void;
+  /** 重命名当前文档标题（写入文档名并标记未保存）。 */
+  renameDocument: (name: string) => void;
   addRecent: (entry: RecentEntry) => void;
+  /** 只重命名启动页最近文件记录，不改动磁盘上的文件名。 */
+  renameRecent: (id: string, name: string) => void;
   removeRecent: (id: string) => void;
   clearRecent: () => void;
   setChemReport: (report: ChemReport | null) => void;
@@ -1594,8 +1599,8 @@ export const useAppStore = create<AppState>((set, get) => {
       });
     },
 
-    goToStart: () => {
-      if (get().route === 'editor' && get().isDirty && !confirmDiscard('返回启动页')) return;
+    goToStart: (force = false) => {
+      if (!force && get().route === 'editor' && get().isDirty && !confirmDiscard('返回启动页')) return;
       clearAutosave();
       set({
         route: 'start',
@@ -1604,7 +1609,9 @@ export const useAppStore = create<AppState>((set, get) => {
         dragPreview: null,
         selection: [],
         propertiesOpen: false,
-        exportPanelOpen: false
+        exportPanelOpen: false,
+        // 已离开编辑文档；启动页不再持有未保存状态，关闭窗口时不会重复确认。
+        isDirty: false
       });
     },
 
@@ -2663,6 +2670,21 @@ export const useAppStore = create<AppState>((set, get) => {
       });
     },
 
+    renameDocument: (name) => {
+      const clean = name.trim().replace(/\s+/g, ' ').slice(0, 80);
+      const doc = get().doc;
+      if (!clean || clean === doc.name) return;
+      const recent = get().recent.map((item) =>
+        item.id === doc.id ? { ...item, name: clean } : item
+      );
+      writeRecent(recent);
+      set({
+        doc: { ...doc, name: clean, updatedAt: new Date().toISOString() },
+        isDirty: true,
+        recent
+      });
+    },
+
     addRecent: (entry) => {
       const recent = [
         entry,
@@ -2670,6 +2692,16 @@ export const useAppStore = create<AppState>((set, get) => {
       ]
         .filter((item, index, array) => array.findIndex((other) => other.id === item.id) === index)
         .slice(0, 6);
+      writeRecent(recent);
+      set({ recent });
+    },
+
+    renameRecent: (id, name) => {
+      const clean = name.trim().replace(/\s+/g, ' ').slice(0, 80);
+      if (!clean) return;
+      const recent = get().recent.map((item) =>
+        item.id === id ? { ...item, name: clean } : item
+      );
       writeRecent(recent);
       set({ recent });
     },

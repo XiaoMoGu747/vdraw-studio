@@ -959,6 +959,30 @@ test('启动页：自定义快捷模板可增删，同名只更新尺寸', () =>
   }
 });
 
+test('重命名：文档标题与最近文件记录互相同步', () => {
+  const doc = createDocument('blank-landscape', '旧标题');
+  const recent = [
+    {
+      id: doc.id,
+      name: '旧标题',
+      path: 'C:/tmp/old.vdraw',
+      templateId: doc.templateId,
+      templateName: '空白',
+      sizeLabel: 'A4',
+      openedAt: new Date().toISOString()
+    }
+  ];
+  useAppStore.setState({ doc, isDirty: false, recent });
+  useAppStore.getState().renameDocument('  新 标题  ');
+  assert.equal(useAppStore.getState().doc.name, '新 标题');
+  assert.equal(useAppStore.getState().isDirty, true);
+  assert.equal(useAppStore.getState().recent[0].name, '新 标题');
+
+  useAppStore.getState().renameRecent(doc.id, '最近记录名');
+  assert.equal(useAppStore.getState().recent[0].name, '最近记录名');
+  assert.equal(useAppStore.getState().doc.name, '新 标题');
+});
+
 test('对象图层：复制、删除与拖动层级（越靠后越在上层）', () => {
   // store 的 notify 依赖 window.setTimeout；Node 环境下补一个最小 shim。
   const host = globalThis as unknown as { window?: unknown };
