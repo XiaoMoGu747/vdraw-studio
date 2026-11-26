@@ -66,6 +66,7 @@ export function EditorView() {
     <div
       className={`editor-shell${focusCanvas ? ' is-focus-canvas' : ''}`}
       data-focus-canvas={focusCanvas ? 'true' : 'false'}
+      data-dock-open={leftDockOpen ? 'true' : 'false'}
     >
       <TitleBar />
       <div className="workspace">

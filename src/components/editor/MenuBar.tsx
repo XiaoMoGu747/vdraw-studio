@@ -59,6 +59,7 @@ export function MenuBar() {
   const showRulers = useAppStore((state) => state.showRulers);
   const snapEnabled = useAppStore((state) => state.snapEnabled);
   const viewportSize = useAppStore((state) => state.viewportSize);
+  const canvasLeftInset = useAppStore((state) => state.canvasLeftInset);
 
   const startDocument = useAppStore((state) => state.startDocument);
   const notify = useAppStore((state) => state.notify);
@@ -89,7 +90,11 @@ export function MenuBar() {
   const openImportPanel = useAppStore((state) => state.openImportPanel);
   const openSettings = useAppStore((state) => state.openSettings);
 
-  const centerAnchor = { x: viewportSize.width / 2, y: viewportSize.height / 2 };
+  // 左侧浮层不参与可见区域，缩放锚点取露出画布的中心。
+  const centerAnchor = {
+    x: (viewportSize.width + canvasLeftInset) / 2,
+    y: viewportSize.height / 2
+  };
   const hasSelection = selection.length > 0;
   const hasGroup = selection.some(
     (id) => useAppStore.getState().doc.layers.some((layer) => layer.objects.some((obj) => obj.id === id && obj.type === 'group'))

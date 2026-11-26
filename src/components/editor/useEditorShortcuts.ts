@@ -16,6 +16,7 @@ export function useEditorShortcuts(): void {
   const notify = useAppStore((state) => state.notify);
   const doc = useAppStore((state) => state.doc);
   const viewportSize = useAppStore((state) => state.viewportSize);
+  const canvasLeftInset = useAppStore((state) => state.canvasLeftInset);
   const undo = useAppStore((state) => state.undo);
   const redo = useAppStore((state) => state.redo);
   const selectAll = useAppStore((state) => state.selectAll);
@@ -33,7 +34,10 @@ export function useEditorShortcuts(): void {
   const toggleToolLabels = useAppStore((state) => state.toggleToolLabels);
 
   useEffect(() => {
-    const center = { x: viewportSize.width / 2, y: viewportSize.height / 2 };
+    const center = {
+      x: (viewportSize.width + canvasLeftInset) / 2,
+      y: viewportSize.height / 2
+    };
 
     const handleKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
@@ -241,6 +245,7 @@ export function useEditorShortcuts(): void {
     notify,
     doc.templateId,
     viewportSize,
+    canvasLeftInset,
     undo,
     redo,
     selectAll,

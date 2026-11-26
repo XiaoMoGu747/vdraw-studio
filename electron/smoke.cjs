@@ -4657,11 +4657,12 @@ async function runSmokeFlow(win, smokeErrors) {
       })()`
     );
     await sleep(180);
+    // 直接点浮层里的目标页签：不要再点色块入口，否则浮层已开时会被当成“再次点击目标”收起。
     await readDom(
       win,
-      `document.querySelector('[data-testid="${target === 'fill' ? 'color-entry' : 'color-entry-stroke'}"]')?.click()`
+      `document.querySelector('[data-color-target-tab="${target}"]')?.click()`
     );
-    await sleep(120);
+    await sleep(100);
     const picked = await readDom(
       win,
       `(() => {
@@ -4697,7 +4698,7 @@ async function runSmokeFlow(win, smokeErrors) {
       })()`
     );
     await sleep(160);
-    await readDom(win, `document.querySelector('[data-testid="color-entry"]')?.click()`);
+    await readDom(win, `document.querySelector('[data-color-target-tab="fill"]')?.click()`);
     await sleep(100);
     await readDom(win, `document.querySelector('[data-testid="fill-none"]')?.click()`);
     await sleep(120);
@@ -5304,7 +5305,7 @@ async function runSmokeFlow(win, smokeErrors) {
     slideMask: Boolean(edgeAfter1.mask && edgeAfter1.maskBlack >= 1),
     slideBbox: boxClose(edgeRectBoxBefore, edgeBoxAfter1),
     tapOutsideWhite: lightPixel(edgePxAfter2bOutside),
-    tapInsideWhite: lightPixel(edgePxAfter2bInside),
+    // 边线内 4px 仍落在 4px 蓝色描边上，不能拿它判断填充；填充保留由 tapDeepDark 覆盖。
     tapDeepDark: darkPixel(edgePxAfter2bDeep),
     tapBbox: boxClose(edgeRectBoxBefore, edgeBoxAfter2b),
     edgeOutsideWhite: lightPixel(edgePxAfter3Outside),
@@ -6406,6 +6407,16 @@ async function runSmokeFlow(win, smokeErrors) {
           layerChevrons: document.querySelectorAll(
             '[data-testid^="layer-toggle-"], .layer-row__chevron'
           ).length,
+          // 左侧调色板是浮层：卡片下方的空白必须命中画布，而不是 workspace 死区。
+          leftStripInCanvas: (() => {
+            const dock = document.querySelector('.left-dock')?.getBoundingClientRect();
+            if (!dock) return false;
+            const element = document.elementFromPoint(
+              Math.round(dock.right - 24),
+              Math.round(dock.bottom + 80)
+            );
+            return Boolean(element?.closest('[data-testid="canvas-hit"]'));
+          })(),
           canvasWidth: Math.round(
             document.querySelector('[data-testid="canvas-hit"]')?.getBoundingClientRect().width || 0
           ),
@@ -6431,6 +6442,34 @@ async function runSmokeFlow(win, smokeErrors) {
       win,
       `document.querySelector('[data-testid="object-scope-current"]')?.getAttribute('aria-pressed') === 'true'`
     );
+
+    // 对象列表多选：Ctrl/⌘ 加选、Shift 连选，表现必须与画布一致。
+    await readDom(
+      win,
+      `document.querySelectorAll('[data-object-row]')[0]?.dispatchEvent(
+        new MouseEvent('click', { bubbles: true })
+      )`
+    );
+    await sleep(180);
+    await readDom(
+      win,
+      `document.querySelectorAll('[data-object-row]')[1]?.dispatchEvent(
+        new MouseEvent('click', { bubbles: true, ctrlKey: true })
+      )`
+    );
+    await sleep(220);
+    const multiCount = await readDom(
+      win,
+      `document.querySelectorAll('[data-object-row].is-active').length`
+    );
+    await readDom(
+      win,
+      `document.querySelectorAll('[data-object-row]')[0]?.dispatchEvent(
+        new MouseEvent('click', { bubbles: true })
+      )`
+    );
+    await sleep(160);
+    const objectMulti = { count: multiCount, ok: multiCount === 2 };
 
     const panelHeights = await readDom(
       win,
@@ -6562,6 +6601,88 @@ async function runSmokeFlow(win, smokeErrors) {
     await readDom(win, `document.querySelector('[data-testid="properties-section-collapse"]')?.click()`);
     await sleep(180);
     const propsRestored = await readDom(win, `Boolean(document.querySelector('.props-inline__body'))`);
+
+    // 锁定保护：属性面板必须拒绝写操作，并说明原因；解锁后恢复。
+    const lockClicked = await readDom(
+      win,
+      `(() => {
+        const button = [...document.querySelectorAll('.ghost-action')].find(
+          (el) => el.textContent.trim() === '锁定对象'
+        );
+        if (!button) return false;
+        button.click();
+        return true;
+      })()`
+    );
+    await sleep(260);
+    const lockNote = await readDom(
+      win,
+      `Boolean(document.querySelector('[data-testid="properties-locked-note"]'))`
+    );
+    const lockXBefore = await readDom(
+      win,
+      `[...document.querySelectorAll('.props-inline .field')].find(
+        (el) => (el.querySelector('span')?.textContent || '').trim() === 'X'
+      )?.querySelector('input')?.value || null`
+    );
+    await readDom(
+      win,
+      `(() => {
+        const field = [...document.querySelectorAll('.props-inline .field')].find(
+          (el) => (el.querySelector('span')?.textContent || '').trim() === 'X'
+        );
+        const input = field?.querySelector('input');
+        if (!input) return false;
+        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+        input.focus();
+        setter.call(input, String(Number(input.value) + 50));
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.blur();
+        return true;
+      })()`
+    );
+    await sleep(320);
+    const lockXAfter = await readDom(
+      win,
+      `[...document.querySelectorAll('.props-inline .field')].find(
+        (el) => (el.querySelector('span')?.textContent || '').trim() === 'X'
+      )?.querySelector('input')?.value || null`
+    );
+    const lockToast = await readDom(
+      win,
+      `[...document.querySelectorAll('[data-testid="toast"]')].map((el) => el.textContent).join(' | ')`
+    );
+    await readDom(
+      win,
+      `(() => {
+        const button = [...document.querySelectorAll('.ghost-action')].find(
+          (el) => el.textContent.trim() === '解锁对象'
+        );
+        if (!button) return false;
+        button.click();
+        return true;
+      })()`
+    );
+    await sleep(240);
+    const lockUnlocked = await readDom(
+      win,
+      `!document.querySelector('[data-testid="properties-locked-note"]')`
+    );
+    const lockGuard = {
+      clicked: lockClicked,
+      note: lockNote,
+      before: lockXBefore,
+      after: lockXAfter,
+      toast: lockToast,
+      unlocked: lockUnlocked,
+      ok:
+        lockClicked &&
+        lockNote &&
+        lockXBefore !== null &&
+        lockXAfter === lockXBefore &&
+        lockToast.includes('已锁定') &&
+        lockUnlocked
+    };
     await readDom(win, `document.querySelector('[data-testid="sidebar-tab-layers"]')?.click()`);
     await sleep(200);
 
@@ -6608,6 +6729,8 @@ async function runSmokeFlow(win, smokeErrors) {
         !base.tutorialHint &&
         base.eraserTip.startsWith('化学橡皮') &&
         base.layerChevrons === 0 &&
+        base.leftStripInCanvas &&
+        objectMulti.ok &&
         allState.active &&
         allState.rows >= base.objectRows &&
         allState.layerTags > 0 &&
@@ -6639,6 +6762,7 @@ async function runSmokeFlow(win, smokeErrors) {
         propsCollapsed.button &&
         propsCollapsed.expanded &&
         propsRestored &&
+        lockGuard.ok &&
         paletteBase.panel &&
         paletteBase.collapse &&
         paletteBase.rows >= 2 &&
@@ -6661,6 +6785,8 @@ async function runSmokeFlow(win, smokeErrors) {
       propsCollapse,
       propsCollapsed,
       propsRestored,
+      objectMulti,
+      lockGuard,
       paletteBase,
       paletteCollapsed,
       paletteRestored
@@ -6673,17 +6799,21 @@ async function runSmokeFlow(win, smokeErrors) {
   // ---- 文档重命名与关闭确认：双击标题、右键最近文件、统一 Modal ----
   let uiPolish = { ok: false };
   try {
-    await readDom(
-      win,
-      `document.querySelector('[data-testid="doc-title"]')?.dispatchEvent(
-        new MouseEvent('dblclick', { bubbles: true, cancelable: true })
-      )`
-    );
-    await sleep(180);
-    const titleEditOpen = await readDom(
-      win,
-      `Boolean(document.querySelector('[data-testid="doc-title-input"]'))`
-    );
+    // 双击标题偶尔会被前一步焦点/浮层收尾抢走；给 3 次机会，避免把时序抖动当功能失败。
+    let titleEditOpen = false;
+    for (let attempt = 0; attempt < 3 && !titleEditOpen; attempt += 1) {
+      await readDom(
+        win,
+        `document.querySelector('[data-testid="doc-title"]')?.dispatchEvent(
+          new MouseEvent('dblclick', { bubbles: true, cancelable: true })
+        )`
+      );
+      await sleep(220);
+      titleEditOpen = await readDom(
+        win,
+        `Boolean(document.querySelector('[data-testid="doc-title-input"]'))`
+      );
+    }
     await readDom(
       win,
       `(() => {

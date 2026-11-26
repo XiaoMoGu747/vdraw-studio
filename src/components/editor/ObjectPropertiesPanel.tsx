@@ -68,18 +68,43 @@ export function ObjectPropertiesPanel({
   const setStrokeCap = useAppStore((state) => state.setStrokeCap);
   const strokeJoin = useAppStore((state) => state.strokeJoin);
   const setStrokeJoin = useAppStore((state) => state.setStrokeJoin);
+  const beginTransaction = useAppStore((state) => state.beginTransaction);
+  const endTransaction = useAppStore((state) => state.endTransaction);
 
   const selectedObjects = selection
     .map((id) => getObject(doc, id))
     .filter((obj): obj is SceneObject => Boolean(obj));
   const primary = selectedObjects[0] ?? null;
+  const allSelectedLocked =
+    selectedObjects.length > 0 && selectedObjects.every((obj) => obj.locked);
+  const mixedObjectTypes =
+    selectedObjects.length > 1 &&
+    new Set(selectedObjects.map((obj) => obj.type)).size > 1;
   const objectTypeLabel = primary
-    ? primary.type === 'group'
-      ? isBenzeneGroup(primary)
-        ? '苯环'
-        : '编组'
-      : primary.name
+    ? mixedObjectTypes
+      ? '多个对象'
+      : primary.type === 'group'
+        ? isBenzeneGroup(primary)
+          ? '苯环'
+          : '编组'
+        : primary.name
     : '未选择对象';
+  // 锁定是保护而不是装饰：属性面板的所有写操作都先经过这道闸，避免“锁了还能改”。
+  const affectedIds = new Set(expandSelection(doc, selection));
+  const lockedSelectedCount = allObjects(doc).filter(
+    (obj) => affectedIds.has(obj.id) && (obj.locked || Boolean(getLayerOfObject(doc, obj.id)?.locked))
+  ).length;
+  const guardUnlocked = () => {
+    if (lockedSelectedCount === 0) return true;
+    notify(
+      `选中对象中有 ${lockedSelectedCount} 个已锁定（或所在图层已锁定），请先在图层列表解锁再编辑`,
+      'warn'
+    );
+    return false;
+  };
+  const runUnlocked = (action: () => void) => {
+    if (guardUnlocked()) action();
+  };
   // 变换区与画布选框必须用同一个局部盒：单对象取“未旋转盒 + 旋转角”，多选取轴对齐包围盒。
   // 用 selectionBounds（旋转后的包围盒）会让旋转 30° 的矩形在面板里显示成 404×360，
   // 而改宽高又按本地盒缩放，读数与结果对不上。
@@ -111,7 +136,7 @@ export function ObjectPropertiesPanel({
     let blocked = false;
     for (const obj of allObjects(state.doc)) {
       if (obj.type !== 'text' || !ids.has(obj.id)) continue;
-      if (getLayerOfObject(state.doc, obj.id)?.locked) {
+      if (obj.locked || getLayerOfObject(state.doc, obj.id)?.locked) {
         blocked = true;
         continue;
       }
@@ -191,6 +216,14 @@ export function ObjectPropertiesPanel({
     setMenuOpen(false);
   }, [primary?.id, selection.length]);
 
+  // 原子元素 / 同位素是逐字符写入并包在事务里；切换选择或卸载时必须收尾，避免 pendingSnapshot 泄漏。
+  useEffect(
+    () => () => {
+      endTransaction();
+    },
+    [primary?.id, collapsed, endTransaction]
+  );
+
   useEffect(() => {
     if (!menuOpen) return;
     const close = (event: PointerEvent) => {
@@ -248,6 +281,7 @@ export function ObjectPropertiesPanel({
   }
 
   const mutateSelection = (updater: (obj: SceneObject) => SceneObject) => {
+    if (!guardUnlocked()) return;
     const state = useAppStore.getState();
     const ids = new Set(expandSelection(state.doc, state.selection));
     let next = state.doc;
@@ -261,7 +295,7 @@ export function ObjectPropertiesPanel({
   const transform = (fn: (state: ReturnType<typeof useAppStore.getState>) => void) => fn(useAppStore.getState());
 
   const setX = (value: number) => {
-    if (!bounds) return;
+    if (!bounds || !guardUnlocked()) return;
     transform((state) =>
       updateDoc(
         translateDocumentObjects(state.doc, state.selection, value - Math.round(bounds.x * 10) / 10, 0),
@@ -271,7 +305,7 @@ export function ObjectPropertiesPanel({
   };
 
   const setY = (value: number) => {
-    if (!bounds) return;
+    if (!bounds || !guardUnlocked()) return;
     transform((state) =>
       updateDoc(
         translateDocumentObjects(state.doc, state.selection, 0, value - Math.round(bounds.y * 10) / 10),
@@ -281,16 +315,18 @@ export function ObjectPropertiesPanel({
   };
 
   const setW = (value: number) => {
+    if (!guardUnlocked()) return;
     const state = useAppStore.getState();
     const frame = selectionFrame(state.doc, state.selection);
-    if (!frame || frame.bounds.width < 0.01 || value < 1) return;
+    if (!frame || frame.bounds.width < 0.01) return;
+    const next = Math.max(1, value);
     updateDoc(
       scaleDocumentObjectsInFrame(
         state.doc,
         state.selection,
         frame,
         frameLocalToWorld(frame, { x: frame.bounds.x, y: frame.bounds.y }),
-        value / frame.bounds.width,
+        next / frame.bounds.width,
         1
       ),
       true
@@ -298,9 +334,11 @@ export function ObjectPropertiesPanel({
   };
 
   const setH = (value: number) => {
+    if (!guardUnlocked()) return;
     const state = useAppStore.getState();
     const frame = selectionFrame(state.doc, state.selection);
-    if (!frame || frame.bounds.height < 0.01 || value < 1) return;
+    if (!frame || frame.bounds.height < 0.01) return;
+    const next = Math.max(1, value);
     updateDoc(
       scaleDocumentObjectsInFrame(
         state.doc,
@@ -308,7 +346,7 @@ export function ObjectPropertiesPanel({
         frame,
         frameLocalToWorld(frame, { x: frame.bounds.x, y: frame.bounds.y }),
         1,
-        value / frame.bounds.height
+        next / frame.bounds.height
       ),
       true
     );
@@ -352,6 +390,7 @@ export function ObjectPropertiesPanel({
 
   /** 参照 Godot 的节点 scale：按百分比换算成选框缩放，并保留首次的基准尺寸。 */
   const applyScaleTargets = (targetXPercent: number, targetYPercent: number) => {
+    if (!guardUnlocked()) return;
     const state = useAppStore.getState();
     if (state.selection.length !== 1) return;
     const frame = selectionFrame(state.doc, state.selection);
@@ -411,6 +450,7 @@ export function ObjectPropertiesPanel({
       primary.type === 'image');
   const primaryRotation = absoluteRotation ? primary.rotation ?? 0 : 0;
   const rotateSelection = (value: number) => {
+    if (!guardUnlocked()) return;
     const state = useAppStore.getState();
     const frame = selectionFrame(state.doc, state.selection);
     if (!frame) return;
@@ -459,7 +499,15 @@ export function ObjectPropertiesPanel({
             </button>
             {menuOpen ? (
               <div className="props-inline__menu" role="menu">
-                <button type="button" role="menuitem" onClick={deleteSelection}>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    if (!guardUnlocked()) return;
+                    setMenuOpen(false);
+                    deleteSelection();
+                  }}
+                >
                   <Icon name="trash" size={13} />
                   删除对象
                 </button>
@@ -480,6 +528,12 @@ export function ObjectPropertiesPanel({
           {collapseButton}
         </div>
       </header>
+      {!collapsed && lockedSelectedCount > 0 ? (
+        <div className="props-lock-note" data-testid="properties-locked-note">
+          <Icon name="lock" size={13} />
+          <span>选中对象已锁定（或所在图层已锁定），解锁后才能修改属性。</span>
+        </div>
+      ) : null}
       {!collapsed ? (
       <div className="props-inline__body">
         <div className="object-props">
@@ -496,7 +550,7 @@ export function ObjectPropertiesPanel({
                 className="icon-btn"
                 title={action.label}
                 disabled={selection.length === 0}
-                onClick={() => alignSelection(action.mode)}
+                onClick={() => runUnlocked(() => alignSelection(action.mode))}
               >
                 <Icon name={action.icon} size={17} />
               </button>
@@ -506,7 +560,7 @@ export function ObjectPropertiesPanel({
               className="icon-btn"
               title="水平分布"
               disabled={selection.length < 3}
-              onClick={() => distributeSelection('h')}
+              onClick={() => runUnlocked(() => distributeSelection('h'))}
             >
               <Icon name="distributeH" size={17} />
             </button>
@@ -515,7 +569,7 @@ export function ObjectPropertiesPanel({
               className="icon-btn"
               title="垂直分布"
               disabled={selection.length < 3}
-              onClick={() => distributeSelection('v')}
+              onClick={() => runUnlocked(() => distributeSelection('v'))}
             >
               <Icon name="distributeV" size={17} />
             </button>
@@ -598,36 +652,36 @@ export function ObjectPropertiesPanel({
             </div>
           ) : null}
           <div className="prop-actions prop-actions--wrap">
-            <button type="button" className="ghost-action" disabled={selection.length < 2} onClick={groupSelection}>
+            <button type="button" className="ghost-action" disabled={selection.length < 2} onClick={() => runUnlocked(groupSelection)}>
               编组
             </button>
-            <button type="button" className="ghost-action" disabled={!selectedObjects.some((obj) => obj.type === 'group')} onClick={ungroupSelection}>
+            <button type="button" className="ghost-action" disabled={!selectedObjects.some((obj) => obj.type === 'group')} onClick={() => runUnlocked(ungroupSelection)}>
               解组
             </button>
-            <button type="button" className="ghost-action" onClick={() => reorderSelection('front')}>
+            <button type="button" className="ghost-action" onClick={() => runUnlocked(() => reorderSelection('front'))}>
               置顶
             </button>
-            <button type="button" className="ghost-action" onClick={() => reorderSelection('forward')}>
+            <button type="button" className="ghost-action" onClick={() => runUnlocked(() => reorderSelection('forward'))}>
               上移一层
             </button>
-            <button type="button" className="ghost-action" onClick={() => reorderSelection('backward')}>
+            <button type="button" className="ghost-action" onClick={() => runUnlocked(() => reorderSelection('backward'))}>
               下移一层
             </button>
-            <button type="button" className="ghost-action" onClick={() => reorderSelection('back')}>
+            <button type="button" className="ghost-action" onClick={() => runUnlocked(() => reorderSelection('back'))}>
               置底
             </button>
           </div>
           <div className="prop-actions prop-actions--wrap">
-            <button type="button" className="ghost-action" title="顺时针旋转 90°" onClick={() => rotateSelectionBy(90)}>
+            <button type="button" className="ghost-action" title="顺时针旋转 90°" onClick={() => runUnlocked(() => rotateSelectionBy(90))}>
               旋转 +90°
             </button>
-            <button type="button" className="ghost-action" title="逆时针旋转 90°" onClick={() => rotateSelectionBy(-90)}>
+            <button type="button" className="ghost-action" title="逆时针旋转 90°" onClick={() => runUnlocked(() => rotateSelectionBy(-90))}>
               旋转 −90°
             </button>
-            <button type="button" className="ghost-action" onClick={() => flipSelection('horizontal')}>
+            <button type="button" className="ghost-action" onClick={() => runUnlocked(() => flipSelection('horizontal'))}>
               水平翻转
             </button>
-            <button type="button" className="ghost-action" onClick={() => flipSelection('vertical')}>
+            <button type="button" className="ghost-action" onClick={() => runUnlocked(() => flipSelection('vertical'))}>
               垂直翻转
             </button>
             <button
@@ -635,12 +689,12 @@ export function ObjectPropertiesPanel({
               className="ghost-action"
               title="把选中的矩形/椭圆/多边形/直线转换为可编辑路径"
               disabled={!selectedObjects.some((obj) => ['rect', 'ellipse', 'polygon', 'line'].includes(obj.type))}
-              onClick={convertSelectionToPath}
+              onClick={() => runUnlocked(convertSelectionToPath)}
             >
               转换为路径
             </button>
             <button type="button" className="ghost-action" onClick={toggleObjectLock}>
-              {selectedObjects.every((obj) => obj.locked) ? '解锁对象' : '锁定对象'}
+              {allSelectedLocked ? '解锁对象' : '锁定对象'}
             </button>
           </div>
         </Section>
@@ -760,7 +814,7 @@ export function ObjectPropertiesPanel({
                   onBlur={(event) => {
                     const next = Number(event.target.value);
                     if (!Number.isFinite(next)) return;
-                    applyTextPatch({ fontSize: Math.max(6, next) });
+                    applyTextPatch({ fontSize: Math.min(240, Math.max(6, next)) });
                   }}
                 />
                 <em>px</em>
@@ -819,7 +873,9 @@ export function ObjectPropertiesPanel({
                   key={`spacing-${primary.id}`}
                   onBlur={(event) => {
                     const next = Number(event.target.value);
-                    if (Number.isFinite(next)) applyTextPatch({ letterSpacing: next });
+                    if (Number.isFinite(next)) {
+                      applyTextPatch({ letterSpacing: Math.min(50, Math.max(-5, next)) });
+                    }
                   }}
                 />
                 <em>px</em>
@@ -912,6 +968,8 @@ export function ObjectPropertiesPanel({
                 className="input input--mini"
                 data-prop-focus="atom-element"
                 value={primary.label.element}
+                onFocus={beginTransaction}
+                onBlur={endTransaction}
                 onChange={(event) => {
                   const value = event.target.value.slice(0, 2);
                   updateAtom({ element: value ? value[0].toUpperCase() + value.slice(1) : 'C' });
@@ -988,6 +1046,8 @@ export function ObjectPropertiesPanel({
                   max={300}
                   placeholder="质量数"
                   value={primary.label.isotope ?? ''}
+                  onFocus={beginTransaction}
+                  onBlur={endTransaction}
                   onChange={(event) => {
                     const raw = event.target.value;
                     updateAtom({

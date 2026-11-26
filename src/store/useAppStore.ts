@@ -123,6 +123,14 @@ function clipboardObjects(doc: VDrawDocument, selection: string[]): SceneObject[
     .map((obj) => JSON.parse(JSON.stringify(obj)) as SceneObject);
 }
 
+/** 选中范围内被对象锁或图层锁保护的对象；锁定后属性编辑、删除、排序都应拒绝。 */
+function lockedObjectsIn(doc: VDrawDocument, ids: string[]): SceneObject[] {
+  const selected = new Set(expandSelection(doc, ids));
+  return allObjects(doc).filter(
+    (obj) => selected.has(obj.id) && (obj.locked || Boolean(getLayerOfObject(doc, obj.id)?.locked))
+  );
+}
+
 /** 删除集合：编组展开 + 删除原子时连带相连的键，避免留下悬空键线。 */
 function deletionSet(doc: VDrawDocument, ids: string[]): Set<string> {
   const selected = new Set(expandSelection(doc, ids));
@@ -421,6 +429,8 @@ interface AppState {
   clipboard: SceneObject[] | null;
   viewport: Viewport;
   viewportSize: { width: number; height: number };
+  /** 左侧调色板浮层覆盖画布时，可见画布区域左侧需要让出的宽度。 */
+  canvasLeftInset: number;
   cursor: Vec | null;
   /** 拖拽期只改视觉 transform 的轻量状态；null 表示无预览。 */
   dragPreview: DragPreview | null;
@@ -587,6 +597,7 @@ interface AppState {
   setLeftTab: (tab: PanelTab) => void;
   setViewport: (viewport: Viewport) => void;
   setViewportSize: (size: { width: number; height: number }) => void;
+  setCanvasLeftInset: (inset: number) => void;
   panBy: (dx: number, dy: number) => void;
   zoomAt: (factor: number, anchor?: Vec) => void;
   setZoom: (zoom: number, anchor?: Vec) => void;
@@ -899,6 +910,7 @@ export const useAppStore = create<AppState>((set, get) => {
     clipboard: null,
     viewport: { zoom: 1, pan: { x: 0, y: 0 } },
     viewportSize: { width: 0, height: 0 },
+    canvasLeftInset: 0,
     cursor: null,
     dragPreview: null,
     showGrid: prefs.showGrid,
@@ -1357,6 +1369,10 @@ export const useAppStore = create<AppState>((set, get) => {
     rotateSelectionBy: (degrees) => {
       const { doc, selection } = get();
       if (selection.length === 0 || !degrees) return;
+      if (lockedObjectsIn(doc, selection).length > 0) {
+        get().notify('选中对象已锁定（或所在图层已锁定），请先解锁再旋转', 'warn');
+        return;
+      }
       const frame = selectionFrame(doc, selection);
       if (!frame) return;
       get().updateDoc(rotateDocumentObjects(doc, selection, frame.center, degrees), true);
@@ -1365,6 +1381,10 @@ export const useAppStore = create<AppState>((set, get) => {
     flipSelection: (axis) => {
       const { doc, selection } = get();
       if (selection.length === 0) return;
+      if (lockedObjectsIn(doc, selection).length > 0) {
+        get().notify('选中对象已锁定（或所在图层已锁定），请先解锁再翻转', 'warn');
+        return;
+      }
       const frame = selectionFrame(doc, selection);
       if (!frame) return;
       if (axis === 'horizontal') {
@@ -1399,9 +1419,10 @@ export const useAppStore = create<AppState>((set, get) => {
       if (selection.length === 0) return;
       // 编组锁定时子对象一并锁定，否则仍可被直接命中选中。
       const ids = new Set(expandSelection(doc, selection));
-      const target = allObjects(doc).find((obj) => ids.has(obj.id));
-      if (!target) return;
-      const nextLocked = !target.locked;
+      const targets = allObjects(doc).filter((obj) => ids.has(obj.id));
+      if (targets.length === 0) return;
+      // 混合选择时以“是否全部已锁”为准：只要有未锁对象就统一上锁，全部已锁才解锁。
+      const nextLocked = !targets.every((obj) => obj.locked);
       get().updateDoc(
         {
           ...doc,
@@ -1423,6 +1444,10 @@ export const useAppStore = create<AppState>((set, get) => {
     convertSelectionToPath: () => {
       const { doc, selection } = get();
       if (selection.length === 0) return;
+      if (lockedObjectsIn(doc, selection).length > 0) {
+        get().notify('选中对象已锁定（或所在图层已锁定），请先解锁再转换', 'warn');
+        return;
+      }
       // 只转换直接选中的形状；编组内的子对象不单独转，避免破坏编组结构。
       const ids = new Set(selection);
       const targets = allObjects(doc).filter((obj) => ids.has(obj.id));
@@ -1664,6 +1689,8 @@ export const useAppStore = create<AppState>((set, get) => {
 
     setViewportSize: (size) => set({ viewportSize: size }),
 
+    setCanvasLeftInset: (inset) => set({ canvasLeftInset: Math.max(0, Math.round(inset)) }),
+
     panBy: (dx, dy) => {
       const { viewport } = get();
       set({ viewport: { ...viewport, pan: { x: viewport.pan.x + dx, y: viewport.pan.y + dy } } });
@@ -1682,23 +1709,34 @@ export const useAppStore = create<AppState>((set, get) => {
     },
 
     fitToCanvas: (size, padding = 56) => {
-      const { doc, viewportSize } = get();
+      const { doc, viewportSize, canvasLeftInset } = get();
       const target = size ?? viewportSize;
       if (target.width < 40 || target.height < 40) return;
-      set({ viewport: fitViewport(target.width, target.height, doc.page.width, doc.page.height, padding) });
+      // 左侧调色板浮层覆盖画布：页面只在露出的区域里居中，避免被面板压住。
+      const inset = Math.min(canvasLeftInset, Math.max(0, target.width - 80));
+      const fit = fitViewport(
+        target.width - inset,
+        target.height,
+        doc.page.width,
+        doc.page.height,
+        padding
+      );
+      set({ viewport: { zoom: fit.zoom, pan: { x: fit.pan.x + inset, y: fit.pan.y } } });
     },
 
     zoomToSelection: () => {
-      const { doc, selection, viewportSize } = get();
+      const { doc, selection, viewportSize, canvasLeftInset } = get();
       const bounds = selection.length > 0 ? selectionBounds(doc, selection) : null;
       if (!bounds || viewportSize.width < 40 || viewportSize.height < 40) {
         get().fitToCanvas();
         return;
       }
+      const inset = Math.min(canvasLeftInset, Math.max(0, viewportSize.width - 80));
+      const availableW = Math.max(80, viewportSize.width - inset);
       const padding = 64;
       const zoom = clamp(
         Math.min(
-          (viewportSize.width - padding * 2) / Math.max(1, bounds.width),
+          (availableW - padding * 2) / Math.max(1, bounds.width),
           (viewportSize.height - padding * 2) / Math.max(1, bounds.height)
         ),
         MIN_ZOOM,
@@ -1708,7 +1746,7 @@ export const useAppStore = create<AppState>((set, get) => {
         viewport: {
           zoom,
           pan: {
-            x: viewportSize.width / 2 - (bounds.x + bounds.width / 2) * zoom,
+            x: inset + availableW / 2 - (bounds.x + bounds.width / 2) * zoom,
             y: viewportSize.height / 2 - (bounds.y + bounds.height / 2) * zoom
           }
         }
@@ -2220,8 +2258,17 @@ export const useAppStore = create<AppState>((set, get) => {
     deleteSelection: () => {
       const { doc, selection } = get();
       if (selection.length === 0) return;
+      const ids = deletionSet(doc, selection);
+      const locked = lockedObjectsIn(doc, [...ids]);
+      if (locked.length > 0) {
+        get().notify(
+          `选中的 ${locked.length} 个对象已锁定（或所在图层已锁定），请先解锁再删除`,
+          'warn'
+        );
+        return;
+      }
       // 与橡皮共用善后流程：清理空编组、解除已断开的芳香环、重算编组包围盒。
-      const next = eraseObjects(doc, [...deletionSet(doc, selection)]);
+      const next = eraseObjects(doc, [...ids]);
       get().updateDoc(next, true);
       set({ selection: [] });
     },
@@ -2232,8 +2279,8 @@ export const useAppStore = create<AppState>((set, get) => {
       if (!source) return;
       const layer = doc.layers.find((item) => item.id === source.layerId);
       if (!layer) return;
-      if (layer.locked) {
-        get().notify('图层已锁定，无法复制对象', 'warn');
+      if (layer.locked || source.locked) {
+        get().notify('图层或对象已锁定，无法复制对象', 'warn');
         return;
       }
       const objects = clipboardObjects(doc, [id]);
@@ -2265,6 +2312,11 @@ export const useAppStore = create<AppState>((set, get) => {
       const { doc, selection } = get();
       if (!getObject(doc, id)) return;
       const ids = deletionSet(doc, [id]);
+      const locked = lockedObjectsIn(doc, [...ids]);
+      if (locked.length > 0) {
+        get().notify('对象已锁定（或所在图层已锁定），请先解锁再删除', 'warn');
+        return;
+      }
       const next = eraseObjects(doc, [...ids]);
       get().updateDoc(next, true);
       set({ selection: selection.filter((item) => !ids.has(item)) });
@@ -2276,6 +2328,10 @@ export const useAppStore = create<AppState>((set, get) => {
       const drag = getObject(doc, dragId);
       const target = getObject(doc, targetId);
       if (!drag || !target || drag.layerId !== target.layerId) return;
+      if (drag.locked || getLayerOfObject(doc, dragId)?.locked) {
+        get().notify('对象已锁定（或所在图层已锁定），请先解锁再调整层级', 'warn');
+        return;
+      }
       // 只在同一父级内排序：编组子对象不能拖到编组外，避免结构散架。
       if ((drag.parentId ?? null) !== (target.parentId ?? null)) {
         get().notify('只能在同一编组内调整对象层级', 'info');
@@ -2306,6 +2362,10 @@ export const useAppStore = create<AppState>((set, get) => {
       const ids = selection.filter((id) => Boolean(getObject(doc, id)));
       if (ids.length < 2) {
         get().notify('请选择至少两个对象后再编组', 'warn');
+        return;
+      }
+      if (lockedObjectsIn(doc, ids).length > 0) {
+        get().notify('选中对象已锁定（或所在图层已锁定），请先解锁再编组', 'warn');
         return;
       }
       const objects = ids.map((id) => getObject(doc, id)).filter(Boolean) as SceneObject[];
@@ -2344,6 +2404,10 @@ export const useAppStore = create<AppState>((set, get) => {
         .map((id) => getObject(doc, id))
         .filter((obj): obj is SceneObject => Boolean(obj && obj.type === 'group'));
       if (groups.length === 0) return;
+      if (lockedObjectsIn(doc, groups.map((group) => group.id)).length > 0) {
+        get().notify('编组或所在图层已锁定，请先解锁再解组', 'warn');
+        return;
+      }
       const groupIds = new Set(groups.map((group) => group.id));
       const childIds: string[] = [];
       const next = {
@@ -2368,6 +2432,10 @@ export const useAppStore = create<AppState>((set, get) => {
     alignSelection: (mode) => {
       const { doc, selection } = get();
       if (selection.length === 0) return;
+      if (lockedObjectsIn(doc, selection).length > 0) {
+        get().notify('选中对象已锁定（或所在图层已锁定），请先解锁再对齐', 'warn');
+        return;
+      }
       const pageBounds = { x: 0, y: 0, width: doc.page.width, height: doc.page.height };
       const reference =
         selection.length >= 2 ? selectionBounds(doc, selection) ?? pageBounds : pageBounds;
@@ -2393,6 +2461,10 @@ export const useAppStore = create<AppState>((set, get) => {
       const { doc, selection } = get();
       if (selection.length < 3) {
         get().notify('分布对象需要至少三个对象', 'warn');
+        return;
+      }
+      if (lockedObjectsIn(doc, selection).length > 0) {
+        get().notify('选中对象已锁定（或所在图层已锁定），请先解锁再分布', 'warn');
         return;
       }
       const items = selection
@@ -2432,6 +2504,10 @@ export const useAppStore = create<AppState>((set, get) => {
     reorderSelection: (mode) => {
       const { doc, selection } = get();
       if (selection.length === 0) return;
+      if (lockedObjectsIn(doc, selection).length > 0) {
+        get().notify('选中对象已锁定（或所在图层已锁定），请先解锁再调整层级', 'warn');
+        return;
+      }
       const ids = new Set(expandSelection(doc, selection));
       const next = {
         ...doc,
@@ -2517,6 +2593,10 @@ export const useAppStore = create<AppState>((set, get) => {
         get().notify('文件夹无法合并，请选择具体图层', 'warn');
         return;
       }
+      if (source.locked) {
+        get().notify('当前图层已锁定，请先解锁再向下合并', 'warn');
+        return;
+      }
       let targetIndex = -1;
       for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
         const candidate = doc.layers[cursor];
@@ -2584,6 +2664,13 @@ export const useAppStore = create<AppState>((set, get) => {
       }
       const removed = doc.layers.find((layer) => layer.id === layerId);
       if (!removed) return;
+      const subtree = doc.layers.filter(
+        (layer) => layer.id === layerId || layer.parentId === layerId
+      );
+      if (subtree.some((layer) => layer.locked)) {
+        get().notify('图层或子图层已锁定，请先解锁再删除', 'warn');
+        return;
+      }
       const removedIndex = doc.layers.findIndex((layer) => layer.id === layerId);
       const childIds = doc.layers
         .filter((layer) => layer.parentId === layerId)

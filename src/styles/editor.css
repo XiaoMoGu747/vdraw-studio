@@ -1419,6 +1419,19 @@
   overflow: hidden;
 }
 
+/*
+ * 左侧调色板/工具抽屉是浮层：宽度仍由 dock 占住，画布用负边距铺到工具栏右侧。
+ * 这样 dock 卡片下方不再是一条不可绘制的空白列，空白区域直接命中画布；
+ * 页面适配通过 canvasLeftInset 让出浮层宽度，视觉位置保持不变。
+ */
+.editor-shell[data-dock-open='true']:not(.is-focus-canvas) .canvas-area {
+  margin-left: calc(-1 * var(--dock-w));
+}
+
+.editor-shell[data-dock-open='false']:not(.is-focus-canvas) .canvas-area {
+  margin-left: calc(-1 * var(--dock-mini-w));
+}
+
 .statusbar {
   height: var(--statusbar-h);
   flex: 0 0 auto;
@@ -2138,11 +2151,13 @@ html[data-rail-labels='true'] .rail-btn::after {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  position: relative;
+  z-index: var(--z-inline);
   background: var(--surface-1);
   border-right: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
   border-radius: var(--radius-md);
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-md);
   overflow-y: auto;
 }
 

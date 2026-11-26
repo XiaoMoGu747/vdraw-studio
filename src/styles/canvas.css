@@ -86,7 +86,8 @@ html[data-theme='dark'] .canvas-viewport {
 .canvas-badge {
   position: absolute;
   top: 14px;
-  left: 16px;
+  /* 左侧浮层覆盖画布：HUD 贴住露出的画布左缘，而不是浮层下面。 */
+  left: calc(16px + var(--canvas-inset-left, 0px));
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -116,7 +117,7 @@ html[data-theme='dark'] .canvas-viewport {
 .canvas-modes {
   position: absolute;
   top: 14px;
-  left: 16px;
+  left: calc(16px + var(--canvas-inset-left, 0px));
   transform: translateY(30px);
   display: flex;
   flex-wrap: wrap;

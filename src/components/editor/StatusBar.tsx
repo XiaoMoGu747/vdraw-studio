@@ -28,6 +28,7 @@ export function StatusBar() {
   const chem = useAppStore((state) => state.chem);
   const viewport = useAppStore((state) => state.viewport);
   const viewportSize = useAppStore((state) => state.viewportSize);
+  const canvasLeftInset = useAppStore((state) => state.canvasLeftInset);
   const zoomAt = useAppStore((state) => state.zoomAt);
   const setZoom = useAppStore((state) => state.setZoom);
   const fitToCanvas = useAppStore((state) => state.fitToCanvas);
@@ -53,7 +54,7 @@ export function StatusBar() {
       : hint;
   const zoomPercent = Math.round(viewport.zoom * 100);
   const center = {
-    x: Math.max(0, viewportSize.width / 2),
+    x: Math.max(0, (viewportSize.width + canvasLeftInset) / 2),
     y: Math.max(0, viewportSize.height / 2)
   };
 

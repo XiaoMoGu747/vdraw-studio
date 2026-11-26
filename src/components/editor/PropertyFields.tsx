@@ -64,7 +64,9 @@ export function NumberField({
           onBlur={() => {
             const next = Number.parseFloat(draft);
             if (!Number.isNaN(next) && (value !== null || commitWhenEmpty)) onCommit(next);
+            // 非法 / 被父级拒绝的输入要回到当前真实值，不能把旧文本留在框里造成“已改”的错觉。
             if (commitWhenEmpty) setDraft('');
+            else setDraft(value === null ? '' : String(Math.round(value * 10) / 10));
             useAppStore.getState().endTransaction();
           }}
           onKeyDown={(event) => {

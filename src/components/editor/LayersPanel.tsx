@@ -263,6 +263,7 @@ export function LayersPanel({
           className={[
             'layer-row',
             active ? 'is-active' : '',
+            selectedIds.length > 1 && selectedIds.includes(layer.id) ? 'is-selected' : '',
             layer.visible ? '' : 'is-hidden',
             draggingId === layer.id ? 'is-dragging' : '',
             isFolder ? 'layer-row--folder' : '',
@@ -405,6 +406,8 @@ export function LayersPanel({
     active: boolean;
   } | null>(null);
   const objectDragClickRef = useRef(false);
+  /** 对象列表的 Shift 连选锚点；只在可见的顶层对象序列里取范围。 */
+  const lastObjectClickRef = useRef<string | null>(null);
 
   const objectRowAtPoint = (
     clientX: number,
@@ -492,14 +495,30 @@ export function LayersPanel({
           style={{ paddingLeft: 6 + depth * 13 }}
           role="button"
           tabIndex={0}
-          title={`${object.name}\n点击选择；拖动调整层级；右键可复制或删除。`}
-          onClick={() => {
+          aria-pressed={selection.includes(object.id)}
+          title={`${object.name}\n点击选择；Ctrl/⌘ 加选，Shift 连选；拖动调整层级；右键可复制或删除。`}
+          onClick={(event) => {
             if (objectDragClickRef.current) {
               objectDragClickRef.current = false;
               return;
             }
             setActiveLayer(object.layerId);
-            setSelection([object.id]);
+            // 选对象时清掉图层多选，避免之后拖图层时误带动上一组图层。
+            setSelectedIds([]);
+            // 列表多选与画布一致：Ctrl/⌘ 切换单行，Shift 按可见顺序连选。
+            if (event.shiftKey && lastObjectClickRef.current) {
+              const order = objects.map((item) => item.id);
+              const from = order.indexOf(lastObjectClickRef.current);
+              const to = order.indexOf(object.id);
+              if (from >= 0 && to >= 0) {
+                const [start, end] = from < to ? [from, to] : [to, from];
+                setSelection(order.slice(start, end + 1));
+                lastObjectClickRef.current = object.id;
+                return;
+              }
+            }
+            setSelection([object.id], event.ctrlKey || event.metaKey);
+            lastObjectClickRef.current = object.id;
           }}
           onContextMenu={(event) => {
             event.preventDefault();

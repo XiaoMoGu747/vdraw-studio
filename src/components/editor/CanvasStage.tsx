@@ -3,6 +3,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type PointerEvent as ReactPointerEvent,
   type MouseEvent as ReactMouseEvent
 } from 'react';
@@ -1311,6 +1312,10 @@ export function CanvasStage() {
 
   const setViewport = useAppStore((state) => state.setViewport);
   const setViewportSize = useAppStore((state) => state.setViewportSize);
+  const canvasLeftInset = useAppStore((state) => state.canvasLeftInset);
+  const setCanvasLeftInset = useAppStore((state) => state.setCanvasLeftInset);
+  const leftDockOpen = useAppStore((state) => state.leftDockOpen);
+  const focusCanvas = useAppStore((state) => state.focusCanvas);
   const fitToCanvas = useAppStore((state) => state.fitToCanvas);
   const zoomAt = useAppStore((state) => state.zoomAt);
   const panBy = useAppStore((state) => state.panBy);
@@ -1342,6 +1347,7 @@ export function CanvasStage() {
   const viewportRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<SVGGElement>(null);
   const fittedDocRef = useRef<string | null>(null);
+  const fittedInsetRef = useRef(0);
   const lastAutoFitRef = useRef<{ zoom: number; pan: { x: number; y: number } } | null>(null);
   const panRef = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
   const dragRef = useRef<DragState | null>(null);
@@ -1434,6 +1440,24 @@ export function CanvasStage() {
     return () => observer.disconnect();
   }, [setViewportSize]);
 
+  // 左侧调色板是浮层：测量它实际覆盖的宽度，画布仍铺满整个工作区，
+  // 但页面适配/居中只使用露出的区域，避免被面板压住。
+  useEffect(() => {
+    const dock = document.querySelector<HTMLElement>('.left-dock');
+    if (!dock) {
+      setCanvasLeftInset(0);
+      return;
+    }
+    const measure = () => {
+      const next = Math.round(dock.getBoundingClientRect().width);
+      if (useAppStore.getState().canvasLeftInset !== next) setCanvasLeftInset(next);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(dock);
+    return () => observer.disconnect();
+  }, [leftDockOpen, focusCanvas, setCanvasLeftInset]);
+
   useEffect(() => {
     if (size.width < 40 || size.height < 40) return;
     const current = useAppStore.getState().viewport;
@@ -1443,15 +1467,18 @@ export function CanvasStage() {
       (Math.abs(current.zoom - last.zoom) < 0.0001 &&
         Math.abs(current.pan.x - last.pan.x) < 0.5 &&
         Math.abs(current.pan.y - last.pan.y) < 0.5);
+    const insetChanged = fittedInsetRef.current !== canvasLeftInset;
     const fitKey = `${doc.id}:${fitToken}`;
-    if (fittedDocRef.current === fitKey && !unchanged) return;
+    if (fittedDocRef.current === fitKey && !unchanged && !insetChanged) return;
     fittedDocRef.current = fitKey;
+    fittedInsetRef.current = canvasLeftInset;
     if (doc.page.infinite) {
-      // 无限画布：保持 100%，从纸面中心开始浏览
+      // 无限画布：保持 100%，从露出区域中心开始浏览
+      const visibleWidth = Math.max(80, size.width - canvasLeftInset);
       useAppStore.getState().setViewport({
         zoom: 1,
         pan: {
-          x: Math.round(size.width / 2 - doc.page.width / 2),
+          x: Math.round(canvasLeftInset + visibleWidth / 2 - doc.page.width / 2),
           y: Math.round(size.height / 2 - doc.page.height / 2)
         }
       });
@@ -1459,7 +1486,7 @@ export function CanvasStage() {
       fitToCanvas(size, 56);
     }
     lastAutoFitRef.current = useAppStore.getState().viewport;
-  }, [doc.id, fitToken, size, fitToCanvas]);
+  }, [doc.id, fitToken, size, fitToCanvas, canvasLeftInset]);
 
   useEffect(() => {
     const element = viewportRef.current;
@@ -2150,8 +2177,9 @@ export function CanvasStage() {
     const element = viewportRef.current;
     if (!element) return { x: page.width / 2, y: page.height / 2 };
     const rect = element.getBoundingClientRect();
+    const inset = useAppStore.getState().canvasLeftInset;
     return pagePoint({
-      clientX: rect.left + rect.width / 2,
+      clientX: rect.left + inset + (rect.width - inset) / 2,
       clientY: rect.top + rect.height / 2
     });
   }
@@ -4902,8 +4930,10 @@ export function CanvasStage() {
         if (rect.width < 8 || rect.height < 8) {
           zoomAt(event.altKey ? 1 / 1.25 : 1.25, drag.startScreen);
         } else {
-          const width = state.viewportSize.width || size.width;
+          const totalWidth = state.viewportSize.width || size.width;
           const height = state.viewportSize.height || size.height;
+          const inset = state.canvasLeftInset;
+          const width = Math.max(80, totalWidth - inset);
           const zoom = clamp(
             Math.min(width / rect.width, height / rect.height),
             MIN_ZOOM,
@@ -4913,7 +4943,7 @@ export function CanvasStage() {
           state.setViewport({
             zoom,
             pan: {
-              x: width / 2 - center.x * zoom,
+              x: inset + width / 2 - center.x * zoom,
               y: height / 2 - center.y * zoom
             }
           });
@@ -5336,7 +5366,10 @@ export function CanvasStage() {
         : '#1b1b1b';
 
   return (
-    <div className={`canvas-area${showRulers ? '' : ' canvas-area--no-rulers'}`}>
+    <div
+      className={`canvas-area${showRulers ? '' : ' canvas-area--no-rulers'}`}
+      style={{ '--canvas-inset-left': `${canvasLeftInset}px` } as CSSProperties}
+    >
       {showRulers ? (
         <Rulers
           width={size.width}
@@ -5396,7 +5429,12 @@ export function CanvasStage() {
           </div>
         ) : null}
         {!textComposer && !doc.layers.some((layer) => layer.objects.length > 0) ? (
-          <div className="canvas-empty-guide" data-testid="canvas-empty-guide" role="note">
+          <div
+            className="canvas-empty-guide"
+            data-testid="canvas-empty-guide"
+            role="note"
+            style={{ left: `calc(50% + ${canvasLeftInset / 2}px)` }}
+          >
             <strong>开始绘制</strong>
             <ul>
               <li>
