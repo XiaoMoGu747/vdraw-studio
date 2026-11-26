@@ -22,6 +22,7 @@ export function RightSidebar() {
   const setTab = useAppStore((state) => state.setSidebarTab);
   const selection = useAppStore((state) => state.selection);
   const doc = useAppStore((state) => state.doc);
+  const toggleRightDock = useAppStore((state) => state.toggleRightDock);
 
   const primary = selection.length === 1 ? getObject(doc, selection[0]) : null;
   const typeLabel = primary
@@ -51,6 +52,7 @@ export function RightSidebar() {
 
   return (
     <aside className="right-panel right-sidebar">
+      <div className="right-sidebar__head">
       <div
         className="panel-tabs panel-tabs--sidebar"
         role="tablist"
@@ -93,6 +95,17 @@ export function RightSidebar() {
             <span className="panel-tab__dot" aria-hidden="true" title="有新的选择" />
           ) : null}
         </button>
+      </div>
+      <button
+        type="button"
+        className="icon-btn icon-btn--sm right-sidebar__collapse"
+        data-testid="right-sidebar-collapse"
+        title="收起右侧栏，为画布腾出空间"
+        aria-label="收起右侧栏"
+        onClick={toggleRightDock}
+      >
+        <Icon name="chevronRight" size={14} />
+      </button>
       </div>
       <div
         className="right-sidebar__body"

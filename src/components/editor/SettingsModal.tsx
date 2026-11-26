@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { BOND_PRESETS } from '../../core/chemistry/presets';
 import { TOOLS } from '../../core/tools';
 import {
+  CHEM_ATOM_SIZE_DEFAULT,
+  CHEM_ATOM_SIZE_RANGE,
   CHEM_BOND_LENGTH_DEFAULT,
   CHEM_BOND_LENGTH_RANGE,
   CHEM_BOND_SPACING_DEFAULT,
@@ -107,11 +109,13 @@ export function SettingsModal() {
   const chemBondLength = useAppStore((state) => state.chemBondLength);
   const chemBondWidth = useAppStore((state) => state.chemBondWidth);
   const chemBondSpacing = useAppStore((state) => state.chemBondSpacing);
+  const chemAtomSize = useAppStore((state) => state.chemAtomSize);
   const setChemBondMetric = useAppStore((state) => state.setChemBondMetric);
   const resetChemBondMetrics = useAppStore((state) => state.resetChemBondMetrics);
   const setChemBondLength = useAppStore((state) => state.setChemBondLength);
   const setChemBondWidth = useAppStore((state) => state.setChemBondWidth);
   const setChemBondSpacing = useAppStore((state) => state.setChemBondSpacing);
+  const setChemAtomSize = useAppStore((state) => state.setChemAtomSize);
   const fileActions = useFileActions();
   const [tab, setTab] = useState<SettingsTab>('interface');
   const [saveDir, setSaveDir] = useState('');
@@ -465,7 +469,7 @@ export function SettingsModal() {
                   onClick={resetChemBondMetrics}
                 >
                   恢复默认 {CHEM_BOND_LENGTH_DEFAULT} / {CHEM_BOND_WIDTH_DEFAULT} /{' '}
-                  {CHEM_BOND_SPACING_DEFAULT}
+                  {CHEM_BOND_SPACING_DEFAULT} / {CHEM_ATOM_SIZE_DEFAULT}
                 </button>
               </div>
               <label className="settings-field">
@@ -564,6 +568,39 @@ export function SettingsModal() {
                     onClick={() => setChemBondSpacing(CHEM_BOND_SPACING_DEFAULT)}
                   >
                     默认 {CHEM_BOND_SPACING_DEFAULT.toFixed(1)}px
+                  </button>
+                </div>
+              </label>
+              <label className="settings-field">
+                <span>
+                  <strong>元素大小</strong>
+                  <em>
+                    新建原子/元素标签的字号；范围 {CHEM_ATOM_SIZE_RANGE.min}–
+                    {CHEM_ATOM_SIZE_RANGE.max}px，默认 {CHEM_ATOM_SIZE_DEFAULT}px
+                  </em>
+                </span>
+                <div className="settings-range">
+                  <input
+                    type="range"
+                    min={CHEM_ATOM_SIZE_RANGE.min}
+                    max={CHEM_ATOM_SIZE_RANGE.max}
+                    step={1}
+                    value={chemAtomSize}
+                    data-testid="settings-atom-size"
+                    onChange={(event) =>
+                      setChemBondMetric('atomSize', Number(event.target.value))
+                    }
+                  />
+                  <b>{Math.round(chemAtomSize)}px</b>
+                  <button
+                    type="button"
+                    className="settings-range__reset"
+                    data-testid="settings-atom-size-reset"
+                    disabled={Math.abs(chemAtomSize - CHEM_ATOM_SIZE_DEFAULT) < 0.01}
+                    title={`恢复默认元素大小 ${CHEM_ATOM_SIZE_DEFAULT}px`}
+                    onClick={() => setChemAtomSize(CHEM_ATOM_SIZE_DEFAULT)}
+                  >
+                    默认 {CHEM_ATOM_SIZE_DEFAULT}px
                   </button>
                 </div>
               </label>

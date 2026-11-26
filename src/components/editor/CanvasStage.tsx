@@ -204,7 +204,9 @@ function makeChemBond(
 
 /** 空锚点视为标准比例，便于各成键路径统一调用。 */
 function chemAnchorScale(anchor: BondAnchor | null): number {
-  return anchor ? bondAnchorScale(anchor) : 1;
+  return anchor
+    ? bondAnchorScale(anchor, useAppStore.getState().chemAtomSize)
+    : 1;
 }
 
 /** 新建原子标签：字号随所在结构一起缩放，避免缩放后的结构上贴出“小字”。 */
@@ -212,11 +214,12 @@ function makeChemAtom(
   layerId: string,
   position: Vec,
   label: AtomLabelData,
-  scale = 1
+  scale = 1,
+  baseFontSize = ATOM_FONT_SIZE
 ): AtomObject {
   return createAtomObject(layerId, CHEM_ATOM_STYLE, position, {
     ...label,
-    fontSize: Math.max(8, (label.fontSize ?? ATOM_FONT_SIZE) * scale)
+    fontSize: Math.max(6, (label.fontSize ?? baseFontSize) * scale)
   });
 }
 
@@ -1310,7 +1313,6 @@ export function CanvasStage() {
   const setViewportSize = useAppStore((state) => state.setViewportSize);
   const fitToCanvas = useAppStore((state) => state.fitToCanvas);
   const zoomAt = useAppStore((state) => state.zoomAt);
-  const setZoom = useAppStore((state) => state.setZoom);
   const panBy = useAppStore((state) => state.panBy);
   const setCursor = useAppStore((state) => state.setCursor);
   const openProperties = useAppStore((state) => state.openProperties);
@@ -2325,7 +2327,13 @@ export function CanvasStage() {
         'single',
         anchorScale
       );
-      const atom = makeChemAtom(layer.id, geometry.end, label, anchorScale);
+      const atom = makeChemAtom(
+        layer.id,
+        geometry.end,
+        label,
+        anchorScale,
+        state.chemAtomSize
+      );
       if (anchor.group) {
         const attached = attachObjectsToGroup(state.doc, anchor.group.id, [bond, atom]);
         if (attached) {
@@ -2366,7 +2374,13 @@ export function CanvasStage() {
       state.setSelection([existing.id]);
       return;
     }
-    const atom = makeChemAtom(layer.id, target, label, anchorScale);
+    const atom = makeChemAtom(
+      layer.id,
+      target,
+      label,
+      anchorScale,
+      state.chemAtomSize
+    );
     if (anchor?.group) {
       // 环上的原子标签并入环编组，移动环时标签跟随
       const attached = attachObjectsToGroup(state.doc, anchor.group.id, [atom]);
@@ -2490,7 +2504,13 @@ export function CanvasStage() {
     template.atoms.forEach((atom, index) => {
       if (!atom.label) return;
       children.push({
-        ...makeChemAtom(layer.id, points[index], emptyAtomLabel(atom.label), 1),
+        ...makeChemAtom(
+          layer.id,
+          points[index],
+          emptyAtomLabel(atom.label),
+          1,
+          state.chemAtomSize
+        ),
         parentId: group.id
       });
     });
@@ -5192,8 +5212,6 @@ export function CanvasStage() {
     }
   }
 
-  const zoomPercent = Math.round(zoom * 100);
-  const center = { x: size.width / 2, y: size.height / 2 };
   const overlayScale = Math.min(1 / zoom, page.width / 420, page.height / 300);
   const mirroredPreviews =
     preview && symmetry !== 'none'
@@ -5819,12 +5837,6 @@ export function CanvasStage() {
                   <text x={0} y={30} textAnchor="middle" fontSize={21} fontWeight={600} fill="#8e97a8" fontFamily="Segoe UI, Microsoft YaHei, sans-serif">
                     空白画布
                   </text>
-                  <text x={0} y={55} textAnchor="middle" fontSize={12.5} fill="#aab2c1" fontFamily="Segoe UI, Microsoft YaHei, sans-serif">
-                    从工具栏选择工具，在画布上拖拽开始绘制
-                  </text>
-                  <text x={0} y={75} textAnchor="middle" fontSize={11.5} fill="#bcc3cf" fontFamily="Segoe UI, Microsoft YaHei, sans-serif">
-                    V 选择 · R 矩形 · P 钢笔 · B 化学键
-                  </text>
                 </g>
               </g>
             ) : null}
@@ -6118,21 +6130,6 @@ export function CanvasStage() {
           ) : null}
         </div>
 
-        <div className="zoom-dock" onPointerDown={(event) => event.stopPropagation()}>
-          <button type="button" className="icon-btn icon-btn--sm" title="缩小" onClick={() => zoomAt(1 / 1.2, center)}>
-            <Icon name="minus" size={14} />
-          </button>
-          <button type="button" className="zoom-dock__value" title="恢复到 100%" onClick={() => setZoom(1, center)}>
-            {zoomPercent}%
-          </button>
-          <button type="button" className="icon-btn icon-btn--sm" title="放大" onClick={() => zoomAt(1.2, center)}>
-            <Icon name="plus" size={14} />
-          </button>
-          <span className="zoom-dock__sep" />
-          <button type="button" className="icon-btn icon-btn--sm" title="适应窗口（Ctrl+1）" onClick={() => fitToCanvas()}>
-            <Icon name="fit" size={14} />
-          </button>
-        </div>
 
         <ExportPanel />
       </div>

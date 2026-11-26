@@ -1533,6 +1533,34 @@
   color: var(--accent-text);
 }
 
+/* 缩放控件移入底栏：不再占用画布右下角，也不再挤压工具横栏。 */
+.statusbar .zoom-dock {
+  position: static;
+  min-width: 0;
+  height: 20px;
+  padding: 0 2px;
+  gap: 0;
+  border: none;
+  border-left: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  padding-left: 8px;
+  margin-left: 2px;
+}
+
+.statusbar .zoom-dock__value {
+  min-width: 42px;
+  height: 20px;
+  font-size: var(--fs-2xs);
+}
+
+.statusbar .zoom-dock__sep {
+  height: 12px;
+  margin: 0 2px;
+}
+
 @media (max-width: 1320px) {
   .tool-btn {
     width: 33px;
@@ -3153,8 +3181,8 @@ html[data-rail-labels='true'] .rail-btn::after {
 .mode-docks {
   position: absolute;
   left: 16px;
-  /* 整条坞始终止于 zoom 坞左侧：横栏绝不伸到 zoom 坞下面。 */
-  right: calc(var(--zoom-dock-w) + 32px);
+  /* 缩放坞已移入底栏，工具横栏可以使用画布全宽。 */
+  right: 16px;
   bottom: 14px;
   z-index: var(--z-inline);
   display: flex;

@@ -1979,4 +1979,22 @@ test('化学参数：自定义键距进入渲染，缩放后的结构可推导�
   if (!groupAnchor) return;
   assert.equal(groupAnchor.group?.id, group.id);
   assert.equal(bondAnchorScale(groupAnchor), 2);
+
+  // 孤立原子按字号推导比例；显式传入当前默认字号时，不把默认值变化误判成缩放。
+  const atomOnly = {
+    ...createAtomObject(layer.id, DEFAULT_STYLE, { x: 260, y: 100 }, {
+      ...emptyAtomLabel('C'),
+      fontSize: 32
+    })
+  };
+  const atomOnlyDoc = { ...doc, layers: [{ ...layer, objects: [atomOnly] }] };
+  const atomOnlyAnchor = findBondAnchor(atomOnlyDoc, { x: 260, y: 100 }, 3);
+  assert.ok(atomOnlyAnchor);
+  if (!atomOnlyAnchor) return;
+  assert.equal(bondAnchorScale(atomOnlyAnchor), 2);
+  assert.equal(bondAnchorScale(atomOnlyAnchor, 32), 1);
+
+  // SVG 导出必须使用原子实际字号，而不是写死默认字号。
+  const atomSvg = documentToSvgString(atomOnlyDoc, { includeBackground: false });
+  assert.match(atomSvg, /font-size="32"/);
 });

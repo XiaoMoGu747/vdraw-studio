@@ -115,6 +115,7 @@ export function ExportRegionOverlay({
       className="export-region"
       data-testid="export-region-overlay"
       role="presentation"
+      title="导出范围\n拖拽画布框选范围；空格 + 拖动可平移画布。"
       style={{ pointerEvents: interactive ? 'auto' : 'none' }}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
@@ -148,7 +149,6 @@ export function ExportRegionOverlay({
           />
         ))}
       </div>
-      <div className="export-region__hint">拖拽画布框选导出范围 · 空格 + 拖动可平移</div>
     </div>
   );
 }

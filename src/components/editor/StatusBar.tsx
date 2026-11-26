@@ -26,6 +26,11 @@ export function StatusBar() {
   const brushSmoothing = useAppStore((state) => state.brushSmoothing);
   const brushPreset = useAppStore((state) => state.brushPreset);
   const chem = useAppStore((state) => state.chem);
+  const viewport = useAppStore((state) => state.viewport);
+  const viewportSize = useAppStore((state) => state.viewportSize);
+  const zoomAt = useAppStore((state) => state.zoomAt);
+  const setZoom = useAppStore((state) => state.setZoom);
+  const fitToCanvas = useAppStore((state) => state.fitToCanvas);
 
   const tool = TOOL_MAP[activeTool];
   const objectCount = doc.layers.reduce(
@@ -46,15 +51,22 @@ export function StatusBar() {
           chem.bondFixed ? '（固定化学键）' : ''
         }`
       : hint;
+  const zoomPercent = Math.round(viewport.zoom * 100);
+  const center = {
+    x: Math.max(0, viewportSize.width / 2),
+    y: Math.max(0, viewportSize.height / 2)
+  };
 
   return (
     <footer className="statusbar">
       <div className="statusbar__left">
-        <span className="statusbar__tool">
+        <span
+          className="statusbar__tool"
+          title={`${tool.label}\n${bondHint}`}
+        >
           <span className="statusbar__dot" />
           <strong data-testid="status-tool">{tool.label}</strong>
         </span>
-        <span className="statusbar__hint" data-testid="status-hint">{bondHint}</span>
       </div>
 
       <div className="statusbar__right">
@@ -115,6 +127,50 @@ export function StatusBar() {
           <Icon name="snap" size={13} />
           吸附
         </button>
+
+        <div
+          className="zoom-dock zoom-dock--status"
+          data-testid="status-zoom"
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          <button
+            type="button"
+            className="icon-btn icon-btn--sm"
+            title="缩小"
+            data-testid="status-zoom-out"
+            onClick={() => zoomAt(1 / 1.2, center)}
+          >
+            <Icon name="minus" size={13} />
+          </button>
+          <button
+            type="button"
+            className="zoom-dock__value"
+            title="恢复到 100%"
+            data-testid="status-zoom-value"
+            onClick={() => setZoom(1, center)}
+          >
+            {zoomPercent}%
+          </button>
+          <button
+            type="button"
+            className="icon-btn icon-btn--sm"
+            title="放大"
+            data-testid="status-zoom-in"
+            onClick={() => zoomAt(1.2, center)}
+          >
+            <Icon name="plus" size={13} />
+          </button>
+          <span className="zoom-dock__sep" />
+          <button
+            type="button"
+            className="icon-btn icon-btn--sm"
+            title="适应窗口（Ctrl+1）"
+            data-testid="status-zoom-fit"
+            onClick={() => fitToCanvas()}
+          >
+            <Icon name="fit" size={13} />
+          </button>
+        </div>
       </div>
     </footer>
   );

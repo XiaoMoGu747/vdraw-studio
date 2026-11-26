@@ -172,7 +172,7 @@ export function LeftDock({ collapsed = false }: { collapsed?: boolean }) {
             className="left-dock__drawer-toggle"
             data-testid="left-dock-drawer-toggle"
             aria-expanded={drawerOpen}
-            title={drawerOpen ? '收起描边与工具设置' : '展开描边与工具设置'}
+            title={`${tool.label}\n${tool.hint}\n${drawerOpen ? '点击收起描边与工具设置' : '点击展开描边与工具设置'}`}
             onClick={() => setDrawerOpen((value) => !value)}
           >
             <Icon name="settings" size={13} />
@@ -279,17 +279,11 @@ export function LeftDock({ collapsed = false }: { collapsed?: boolean }) {
         </div>
       </div>
 
-      <div className="dock-tools">
-        <div className="dock-tools__head">
-          <span>{tool.label}</span>
-          <em>{hasOptions ? '工具扩展' : '操作提示'}</em>
-        </div>
-        {hasOptions ? (
+      {hasOptions ? (
+        <div className="dock-tools">
           <ToolOptions tool={activeTool} variant="dock" onClose={() => setTool('select')} />
-        ) : (
-          <p className="dock-tools__hint">{tool.hint}</p>
-        )}
-      </div>
+        </div>
+      ) : null}
           </div>
         </div>
       ) : null}

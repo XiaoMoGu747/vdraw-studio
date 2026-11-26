@@ -19,6 +19,8 @@ import {
 import { patchTextObject } from '../../core/textLayout';
 import { warpSelection } from '../../core/perspectiveWarp';
 import {
+  CHEM_ATOM_SIZE_DEFAULT,
+  CHEM_ATOM_SIZE_RANGE,
   CHEM_BOND_LENGTH_DEFAULT,
   CHEM_BOND_LENGTH_RANGE,
   CHEM_BOND_SPACING_DEFAULT,
@@ -136,6 +138,15 @@ const CHEM_CATEGORIES = [
   ['eraser', '化学橡皮', 'eraser']
 ] as const;
 
+const CHEM_CATEGORY_HINTS: Record<string, string> = {
+  bond: '化学键\n拖拽从原子/键端点延伸，空白处单击或拖拽绘制；可切换键型与固定化学键。',
+  element: '元素\n选择元素后点击画布放置原子标签；点击已有原子可重贴标签。',
+  group: '官能团\n选择官能团后点击画布放置，可作为取代基挂接到环或碳链。',
+  ring: '苯环 / 环系\n选择环模板后点击画布插入；点击已有环碳可挂接新环。',
+  arrow: '箭头\n拖拽绘制反应箭头、平衡箭头或机理箭头，文字可在右侧属性编辑。',
+  eraser: '化学橡皮\n只擦除化学键、原子标签和环骨架；擦断环键后芳香内圈自动解除。'
+};
+
 type FeatureKey = 'symmetry' | 'guides' | 'chem' | 'bucket' | 'shape' | 'text' | 'eraser';
 
 function formatMetric(value: number, decimals: number): string {
@@ -241,6 +252,7 @@ export function ToolModeBar() {
   const bondLength = useAppStore((state) => state.chemBondLength);
   const bondWidth = useAppStore((state) => state.chemBondWidth);
   const bondSpacing = useAppStore((state) => state.chemBondSpacing);
+  const atomSize = useAppStore((state) => state.chemAtomSize);
   const setChemBondMetric = useAppStore((state) => state.setChemBondMetric);
   const resetChemBondMetrics = useAppStore((state) => state.resetChemBondMetrics);
   const symmetry = useAppStore((state) => state.symmetry);
@@ -460,6 +472,11 @@ export function ToolModeBar() {
     } else if (id === 'ring') setTool('ring');
     else if (id === 'arrow') setTool('arrow');
     else setTool('eraser');
+    // 化学橡皮无需二级参数：操作说明放在分类按钮的悬停提示里。
+    if (id === 'eraser') {
+      setOpenChemPanels([]);
+      return;
+    }
     // 点击分类展开二级面板；同一时间只保留一个，避免面板叠加遮挡画布。
     setOpenChemPanels([id]);
   };
@@ -699,14 +716,7 @@ export function ToolModeBar() {
         </>
       );
     }
-    return (
-      <>
-        <header className="chem-subpanel__head">{close}</header>
-        <div className="chem-subpanel__body chem-subpanel__hint">
-          擦除化学键、原子与环骨架；苯环被擦断后芳香内圈自动消失。
-        </div>
-      </>
-    );
+    return <header className="chem-subpanel__head">{close}</header>;
   };
 
   return (
@@ -746,6 +756,7 @@ export function ToolModeBar() {
                   key={id}
                   type="button"
                   data-chem-category={id}
+                  title={CHEM_CATEGORY_HINTS[id] ?? label}
                   className={`mode-dock__item${
                     (id === 'bond' && activeTool === 'bond') ||
                     ((id === 'element' || id === 'group') &&
@@ -782,7 +793,7 @@ export function ToolModeBar() {
                 type="button"
                 className="chem-metric-reset"
                 data-testid="chem-bond-defaults"
-                title={`恢复默认：${CHEM_BOND_LENGTH_DEFAULT} / ${CHEM_BOND_WIDTH_DEFAULT} / ${CHEM_BOND_SPACING_DEFAULT}`}
+                title={`恢复默认：键长 ${CHEM_BOND_LENGTH_DEFAULT} / 键宽 ${CHEM_BOND_WIDTH_DEFAULT} / 键距 ${CHEM_BOND_SPACING_DEFAULT} / 元素 ${CHEM_ATOM_SIZE_DEFAULT}`}
                 onClick={resetChemBondMetrics}
               >
                 <Icon name="undo" size={13} />
@@ -819,6 +830,17 @@ export function ToolModeBar() {
                 max={CHEM_BOND_SPACING_RANGE.max}
                 step={0.1}
                 onCommit={(value) => setChemBondMetric('spacing', value)}
+              />
+              <ChemMetricInput
+                testId="chem-atom-size"
+                label="元素"
+                title={`新增原子/元素标签的字号（${CHEM_ATOM_SIZE_RANGE.min}–${CHEM_ATOM_SIZE_RANGE.max}px）；与键长等参数等比联动`}
+                value={atomSize}
+                decimals={0}
+                min={CHEM_ATOM_SIZE_RANGE.min}
+                max={CHEM_ATOM_SIZE_RANGE.max}
+                step={1}
+                onCommit={(value) => setChemBondMetric('atomSize', value)}
               />
               <span className="mode-dock__divider" />
               <button

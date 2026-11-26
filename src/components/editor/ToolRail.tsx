@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { RAIL_CATALOG, railEntry, railShortcut } from '../../core/rail';
 import type { RailEntry } from '../../core/rail';
-import { RAIL_GROUPS } from '../../core/tools';
+import { RAIL_GROUPS, TOOL_MAP } from '../../core/tools';
 import { useAppStore } from '../../store/useAppStore';
 import { Icon } from '../ui/Icon';
 import { Modal } from '../ui/Modal';
@@ -112,7 +112,12 @@ export function ToolRail() {
         {entries.map((entry, index) => {
           const previous = entries[index - 1];
           const shortcut = railShortcut(entry.key);
-          const tip = shortcut ? `${entry.label} · ${shortcut}` : entry.label;
+          const hint = entry.tool
+            ? TOOL_MAP[entry.tool]?.hint
+            : entry.chemistry
+              ? '打开化学横栏：化学键、元素、官能团、环系与反应箭头。'
+              : '打开该工具组；可在扩展工具中调整常驻工具与顺序。';
+          const tip = `${entry.label}${shortcut ? ` · ${shortcut}` : ''}\n${hint ?? ''}`;
           const groupStart = !previous || previous.group !== entry.group;
           const groupLabel = RAIL_GROUPS.find((group) => group.id === entry.group)?.label;
           return (

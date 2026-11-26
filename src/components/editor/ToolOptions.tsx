@@ -381,10 +381,6 @@ export function ToolOptions({ tool, onClose, variant = 'popover' }: ToolOptionsP
           />
           <em className="brush-value">{brushPressureCurve.toFixed(1)}</em>
         </div>
-        <p className="chem-hint" data-testid="brush-material-hint">
-          硬度 / 间距 / 纹理 / 流量随笔迹保存；正片叠底会逐 dab 与背景相乘。压感曲线
-          &lt;1 轻压更粗，&gt;1 需要更用力，仅手写笔生效。
-        </p>
         <div className="brush-actions">
           <button
             type="button"
@@ -444,9 +440,7 @@ export function ToolOptions({ tool, onClose, variant = 'popover' }: ToolOptionsP
                 </span>
               ))}
             </div>
-          ) : (
-            <p className="chem-hint">把当前尺寸/硬度/纹理保存成预设，之后可一键套用。</p>
-          )}
+          ) : null}
         </div>
         <div className="brush-actions">
           <button
@@ -501,9 +495,6 @@ export function ToolOptions({ tool, onClose, variant = 'popover' }: ToolOptionsP
             }}
           />
         </div>
-        <p className="chem-hint">
-          按住拖拽绘制，单击落点；颜色取调色板当前色。平滑越高越稳，但跟手会更慢，拐角也更圆。
-        </p>
       </div>
     </div>
   );

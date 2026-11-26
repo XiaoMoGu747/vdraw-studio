@@ -3542,7 +3542,13 @@ async function runSmokeFlow(win, smokeErrors) {
           const el = document.querySelector(selector);
           if (!el) return null;
           const r = el.getBoundingClientRect();
-          return { left: Math.round(r.left), right: Math.round(r.right), width: Math.round(r.width) };
+          return {
+            left: Math.round(r.left),
+            right: Math.round(r.right),
+            top: Math.round(r.top),
+            bottom: Math.round(r.bottom),
+            width: Math.round(r.width)
+          };
         };
         const dock = document.querySelector('.left-dock');
         return {
@@ -3675,7 +3681,7 @@ async function runSmokeFlow(win, smokeErrors) {
       return {
         theme: document.documentElement.dataset.theme,
         mode: document.documentElement.dataset.themeMode,
-        statusHint: probe('.statusbar__hint'),
+        statusHint: probe('.statusbar__tool strong'),
         railButton: probe('.tool-rail .rail-btn'),
         panelTab: probe('.right-sidebar .panel-tab'),
         canvasPaper:
@@ -4268,13 +4274,14 @@ async function runSmokeFlow(win, smokeErrors) {
   };
   console.log('SMOKE_RESULT ' + JSON.stringify(result, null, 2));
 
-  // 底部上下文条必须整体落在 zoom 坞左侧（N3）；两者都要在视口内。
+  // 缩放坞已移入底栏：工具横栏只需位于底栏上方，两者不重叠。
   const hudClearsZoom = (info) =>
     Boolean(
       info &&
         info.modeDock &&
         info.zoomDock &&
-        info.modeDock.right + 8 <= info.zoomDock.left &&
+        info.modeDock.bottom <= info.zoomDock.top + 1 &&
+        info.modeDock.right <= info.innerWidth &&
         info.zoomDock.right <= info.innerWidth
     );
   // 深色主题只换界面：画布纸张色必须与切换前逐字节一致（导出不受主题影响）。
@@ -5832,7 +5839,8 @@ async function runSmokeFlow(win, smokeErrors) {
         dock: Boolean(document.querySelector('[data-testid="chem-dock"]')),
         length: document.querySelector('[data-testid="chem-bond-length"]')?.value ?? null,
         width: document.querySelector('[data-testid="chem-bond-width"]')?.value ?? null,
-        spacing: document.querySelector('[data-testid="chem-bond-spacing"]')?.value ?? null
+        spacing: document.querySelector('[data-testid="chem-bond-spacing"]')?.value ?? null,
+        atomSize: document.querySelector('[data-testid="chem-atom-size"]')?.value ?? null
       }))()`
     );
     await selectTool('select');
@@ -5865,7 +5873,8 @@ async function runSmokeFlow(win, smokeErrors) {
       `(() => ({
         length: document.querySelector('[data-testid="chem-bond-length"]')?.value ?? null,
         width: document.querySelector('[data-testid="chem-bond-width"]')?.value ?? null,
-        spacing: document.querySelector('[data-testid="chem-bond-spacing"]')?.value ?? null
+        spacing: document.querySelector('[data-testid="chem-bond-spacing"]')?.value ?? null,
+        atomSize: document.querySelector('[data-testid="chem-atom-size"]')?.value ?? null
       }))()`
     );
     await screenshot('smoke-chem-params.png');
@@ -5923,13 +5932,22 @@ async function runSmokeFlow(win, smokeErrors) {
       win,
       `document.querySelector('[data-testid="settings-bond-spacing"]')?.value ?? null`
     );
+    const settingsAtomSize = await readDom(
+      win,
+      `document.querySelector('[data-testid="settings-atom-size"]')?.value ?? null`
+    );
     await readDom(win, setInputValue('[data-testid="settings-bond-spacing"]', 5));
+    await readDom(win, setInputValue('[data-testid="settings-atom-size"]', 20));
     await sleep(180);
     await readDom(win, `document.querySelector('.modal [aria-label="关闭"]')?.click()`);
     await sleep(220);
     const toolbarSpacing = await readDom(
       win,
       `document.querySelector('[data-testid="chem-bond-spacing"]')?.value ?? null`
+    );
+    const toolbarAtomSize = await readDom(
+      win,
+      `document.querySelector('[data-testid="chem-atom-size"]')?.value ?? null`
     );
 
     chemFocus = {
@@ -5938,26 +5956,32 @@ async function runSmokeFlow(win, smokeErrors) {
         initialParams.length === '40' &&
         initialParams.width === '2.2' &&
         initialParams.spacing === '4.2' &&
+        initialParams.atomSize === '16' &&
         sticky.dock &&
         sticky.tool.includes('选择') &&
         closedAfterConfirm &&
         changedParams.length === '60' &&
         changedParams.width === '3.0' &&
         changedParams.spacing === '6.0' &&
+        changedParams.atomSize === '16' &&
         createdBond &&
         Math.abs(createdBond.length - 60) < 1 &&
         Math.abs(createdBond.width - 3) < 0.2 &&
         createdBond.gap !== null &&
         Math.abs(createdBond.gap - 6) < 0.5 &&
         settingsSpacing === '6' &&
-        toolbarSpacing === '5.0',
+        settingsAtomSize === '16' &&
+        toolbarSpacing === '5.0' &&
+        toolbarAtomSize === '20',
       initialParams,
       sticky,
       closedAfterConfirm,
       changedParams,
       createdBond,
       settingsSpacing,
-      toolbarSpacing
+      settingsAtomSize,
+      toolbarSpacing,
+      toolbarAtomSize
     };
   } catch (error) {
     chemFocus = { ok: false, error: error instanceof Error ? error.message : String(error) };
@@ -6009,6 +6033,7 @@ async function runSmokeFlow(win, smokeErrors) {
         length: document.querySelector('[data-testid="chem-bond-length"]')?.value ?? null,
         width: document.querySelector('[data-testid="chem-bond-width"]')?.value ?? null,
         spacing: document.querySelector('[data-testid="chem-bond-spacing"]')?.value ?? null,
+        atomSize: document.querySelector('[data-testid="chem-atom-size"]')?.value ?? null,
         oldOptions: document.querySelectorAll('[data-testid="bond-fixed-length"], [data-testid="bond-width-lock"]').length,
         fixed: Boolean(document.querySelector('[data-testid="bond-fixed"]'))
       }))()`
@@ -6073,7 +6098,8 @@ async function runSmokeFlow(win, smokeErrors) {
       `(() => ({
         length: document.querySelector('[data-testid="chem-bond-length"]')?.value ?? null,
         width: document.querySelector('[data-testid="chem-bond-width"]')?.value ?? null,
-        spacing: document.querySelector('[data-testid="chem-bond-spacing"]')?.value ?? null
+        spacing: document.querySelector('[data-testid="chem-bond-spacing"]')?.value ?? null,
+        atomSize: document.querySelector('[data-testid="chem-atom-size"]')?.value ?? null
       }))()`
     );
     await readDom(win, `document.querySelector('[data-testid="chem-bond-uniform"]')?.click()`);
@@ -6110,11 +6136,30 @@ async function runSmokeFlow(win, smokeErrors) {
         lengthMax: document.querySelector('[data-testid="settings-bond-length"]')?.max ?? null,
         widthMax: document.querySelector('[data-testid="settings-bond-width"]')?.max ?? null,
         spacingMax: document.querySelector('[data-testid="settings-bond-spacing"]')?.max ?? null,
+        atomMax: document.querySelector('[data-testid="settings-atom-size"]')?.max ?? null,
         reset: Boolean(document.querySelector('[data-testid="settings-bond-defaults"]'))
       }))()`
     );
     await readDom(win, `document.querySelector('.modal [aria-label="关闭"]')?.click()`);
     await sleep(200);
+
+    // 元素大小：工具栏参数应实际作用到新放置的原子标签字号。
+    await readDom(win, setInputValue('[data-testid="chem-atom-size"]', 30));
+    await readDom(win, commitInput('[data-testid="chem-atom-size"]'));
+    await sleep(160);
+    await readDom(win, `document.querySelector('[data-chem-category="element"]')?.click()`);
+    await sleep(180);
+    await readDom(win, clickExpression(0.88, 0.12));
+    await sleep(320);
+    const atomFont = await readDom(
+      win,
+      `(() => {
+        const objects = [...document.querySelectorAll('.scene-layer [data-object-id]')];
+        const last = objects[objects.length - 1];
+        const text = last?.querySelector('text');
+        return text ? Number(text.getAttribute('font-size')) : null;
+      })()`
+    );
 
     await readDom(
       win,
@@ -6142,6 +6187,7 @@ async function runSmokeFlow(win, smokeErrors) {
         defaults.length === '40' &&
         defaults.width === '2.2' &&
         defaults.spacing === '4.2' &&
+        defaults.atomSize === '16' &&
         defaults.oldOptions === 0 &&
         defaults.fixed &&
         focusState?.focused &&
@@ -6152,6 +6198,7 @@ async function runSmokeFlow(win, smokeErrors) {
         uniformScaled.length === '80' &&
         uniformScaled.width === '4.4' &&
         uniformScaled.spacing === '8.4' &&
+        uniformScaled.atomSize === '32' &&
         fixedOn &&
         fixedBond &&
         Math.abs(fixedBond.length - 40) < 1 &&
@@ -6161,10 +6208,13 @@ async function runSmokeFlow(win, smokeErrors) {
         settingsText.includes('化学键键长') &&
         settingsText.includes('化学键键宽') &&
         settingsText.includes('化学键键距') &&
+        settingsText.includes('元素大小') &&
         ranges.lengthMax === '400' &&
         ranges.widthMax === '40' &&
         ranges.spacingMax === '100' &&
+        ranges.atomMax === '120' &&
         ranges.reset &&
+        atomFont === 30 &&
         (cleanupToast.includes('已整理') || cleanupToast.includes('已检查')),
       defaults,
       focusState,
@@ -6172,15 +6222,100 @@ async function runSmokeFlow(win, smokeErrors) {
       enterCommit,
       uniformOn,
       uniformScaled,
+      ranges,
       fixedOn,
       fixedBond,
-      ranges,
+      atomFont,
       cleanupToast
     };
   } catch (error) {
     chemExtras = { ok: false, error: error instanceof Error ? error.message : String(error) };
   }
   console.log('CHEM_EXTRAS ' + JSON.stringify(chemExtras));
+
+  // ---- 图层栏收起、对象筛选范围、背景行与悬停提示 ----
+  let layersPanel = { ok: false };
+  try {
+    await readDom(win, `document.querySelector('[data-testid="sidebar-tab-layers"]')?.click()`);
+    await sleep(260);
+    const base = await readDom(
+      win,
+      `(() => {
+        const bg = document.querySelector('[data-testid="background-layer"]');
+        const eye = document.querySelector('[data-testid="background-eye"]');
+        const rowRect = bg?.getBoundingClientRect();
+        const eyeRect = eye?.getBoundingClientRect();
+        return {
+          collapse: Boolean(document.querySelector('[data-testid="right-sidebar-collapse"]')),
+          currentScope: Boolean(document.querySelector('[data-testid="object-scope-current"]')),
+          allScope: Boolean(document.querySelector('[data-testid="object-scope-all"]')),
+          currentRows: document.querySelectorAll('[data-testid="recent-row"]').length,
+          objectRows: document.querySelectorAll('[data-object-row]').length,
+          backgroundText: bg?.textContent || '',
+          backgroundTitle: bg?.getAttribute('title') || '',
+          eyeInTools: Boolean(eye?.closest('.layer-tools')),
+          eyeOnRight: Boolean(
+            rowRect && eyeRect && eyeRect.left > rowRect.left + rowRect.width / 2
+          ),
+          tutorialHint: Boolean(document.querySelector('.layer-drag-hint, .props-hint')),
+          eraserTip: document.querySelector('[data-chem-category="eraser"]')?.getAttribute('title') || ''
+        };
+      })()`
+    );
+    await readDom(win, `document.querySelector('[data-testid="object-scope-all"]')?.click()`);
+    await sleep(220);
+    const allState = await readDom(
+      win,
+      `(() => ({
+        active: document.querySelector('[data-testid="object-scope-all"]')?.getAttribute('aria-pressed') === 'true',
+        rows: document.querySelectorAll('[data-object-row]').length,
+        layerTags: document.querySelectorAll('.object-row__layer').length,
+        title: document.querySelector('.object-list')?.getAttribute('title') || ''
+      }))()`
+    );
+    await readDom(win, `document.querySelector('[data-testid="object-scope-current"]')?.click()`);
+    await sleep(180);
+    const backState = await readDom(
+      win,
+      `document.querySelector('[data-testid="object-scope-current"]')?.getAttribute('aria-pressed') === 'true'`
+    );
+
+    await readDom(win, `document.querySelector('[data-testid="right-sidebar-collapse"]')?.click()`);
+    await sleep(220);
+    const collapsed = await readDom(win, `!document.querySelector('.right-sidebar')`);
+    await readDom(win, `document.querySelector('[data-testid="toggle-right-dock"]')?.click()`);
+    await sleep(240);
+    const restored = await readDom(win, `Boolean(document.querySelector('.right-sidebar'))`);
+
+    layersPanel = {
+      ok:
+        base.collapse &&
+        base.currentScope &&
+        base.allScope &&
+        base.backgroundText.includes('背景') &&
+        !base.backgroundText.includes('#') &&
+        base.backgroundTitle.startsWith('背景图层') &&
+        base.eyeInTools &&
+        base.eyeOnRight &&
+        !base.tutorialHint &&
+        base.eraserTip.startsWith('化学橡皮') &&
+        allState.active &&
+        allState.rows >= base.objectRows &&
+        allState.layerTags > 0 &&
+        allState.title.startsWith('对象列表') &&
+        backState &&
+        collapsed &&
+        restored,
+      base,
+      allState,
+      backState,
+      collapsed,
+      restored
+    };
+  } catch (error) {
+    layersPanel = { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+  console.log('LAYERS_PANEL ' + JSON.stringify(layersPanel));
 
   // ---- 文档重命名与关闭确认：双击标题、右键最近文件、统一 Modal ----
   let uiPolish = { ok: false };
@@ -6212,7 +6347,7 @@ async function runSmokeFlow(win, smokeErrors) {
     await readDom(
       win,
       `document.querySelector('[data-testid="doc-title-input"]')?.dispatchEvent(
-        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
+        new FocusEvent('focusout', { bubbles: true })
       )`
     );
     await sleep(220);
@@ -6968,7 +7103,7 @@ async function runSmokeFlow(win, smokeErrors) {
     !railAdded ||
     railReordered !== 'guides' ||
     !railRemoved ||
-    !p0.materialHint ||
+    p0.materialHint ||
     liveDabs.dabs < 1 ||
     !liveDabs.inked ||
     !materialStroke.found ||
@@ -7011,6 +7146,7 @@ async function runSmokeFlow(win, smokeErrors) {
     !batchImport.ok ||
     !chemFocus.ok ||
     !chemExtras.ok ||
+    !layersPanel.ok ||
     !uiPolish.ok ||
     !recentSync.ok ||
     smokeErrors.length > 0;

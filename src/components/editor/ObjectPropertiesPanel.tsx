@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { ATOM_PRESETS, BOND_PRESETS } from '../../core/chemistry/presets';
 import { applyBenzeneStyle, isBenzeneGroup } from '../../core/chemistry/benzene';
 import { validateBondUpgrade } from '../../core/chemistry/chain';
+import { ATOM_FONT_SIZE } from '../../core/chemistry/labels';
 import {
   allObjects,
   expandSelection,
@@ -48,8 +49,6 @@ export function ObjectPropertiesPanel() {
   const deleteSelection = useAppStore((state) => state.deleteSelection);
   const reorderSelection = useAppStore((state) => state.reorderSelection);
   const notify = useAppStore((state) => state.notify);
-  const leftDockOpen = useAppStore((state) => state.leftDockOpen);
-  const setLeftDockOpen = useAppStore((state) => state.setLeftDockOpen);
   const rotateSelectionBy = useAppStore((state) => state.rotateSelectionBy);
   const flipSelection = useAppStore((state) => state.flipSelection);
   const toggleObjectLock = useAppStore((state) => state.toggleObjectLock);
@@ -597,73 +596,77 @@ export function ObjectPropertiesPanel() {
         </Section>
 
         {primary.type === 'image' ? (
-          <Section title="位图" hint="图像内嵌在 .vdraw 中，随工程一起保存与导出">
-            <div className="field-row">
-              <span className="field-row__label">原始尺寸</span>
-              <span>
-                {primary.naturalWidth} × {primary.naturalHeight} px
-              </span>
-            </div>
-            <div className="field-row">
-              <span className="field-row__label">格式</span>
-              <span>{primary.imageFormat ? primary.imageFormat.toUpperCase() : '位图'}</span>
-            </div>
-            <div className="field-row">
-              <span className="field-row__label">显示尺寸</span>
-              <span>
-                {Math.round(primary.width)} × {Math.round(primary.height)} px
-              </span>
+          <Section title="位图">
+            <div className="field-grid field-grid--prop">
+              <div className="field-row">
+                <span className="field-row__label">原始尺寸</span>
+                <span>
+                  {primary.naturalWidth} × {primary.naturalHeight} px
+                </span>
+              </div>
+              <div className="field-row">
+                <span className="field-row__label">格式</span>
+                <span>{primary.imageFormat ? primary.imageFormat.toUpperCase() : '位图'}</span>
+              </div>
+              <div className="field-row">
+                <span className="field-row__label">显示尺寸</span>
+                <span>
+                  {Math.round(primary.width)} × {Math.round(primary.height)} px
+                </span>
+              </div>
             </div>
           </Section>
         ) : null}
 
         {hasVectorStyleTarget ? (
-          <Section title="描边样式" hint="显示选中对象的实际线型；无选中时作为新图形默认值">
-            <div className="field-row">
-              <span className="field-row__label">线型</span>
-              <select
-                className="select"
-                data-testid="stroke-dash"
-                value={currentDash}
-                onChange={(event) => applyStrokePattern(event.target.value as StrokeDashPreset)}
-              >
-                <option value="solid">实线</option>
-                <option value="dashed">虚线</option>
-                <option value="dotted">点线</option>
-                <option value="dashdot">点划线</option>
-              </select>
-            </div>
-            <div className="field-row">
-              <span className="field-row__label">端点</span>
-              <select
-                className="select"
-                data-testid="stroke-cap"
-                value={currentCap}
-                onChange={(event) => applyStrokeCap(event.target.value as StrokeCap)}
-              >
-                <option value="round">圆头</option>
-                <option value="butt">平头</option>
-                <option value="square">方头</option>
-              </select>
-            </div>
-            <div className="field-row">
-              <span className="field-row__label">拐角</span>
-              <select
-                className="select"
-                data-testid="stroke-join"
-                value={currentJoin}
-                onChange={(event) => applyStrokeJoin(event.target.value as StrokeJoin)}
-              >
-                <option value="round">圆角</option>
-                <option value="miter">尖角</option>
-                <option value="bevel">斜切</option>
-              </select>
+          <Section title="描边样式">
+            <div className="field-grid field-grid--prop">
+              <div className="field-row">
+                <span className="field-row__label">线型</span>
+                <select
+                  className="select"
+                  data-testid="stroke-dash"
+                  value={currentDash}
+                  onChange={(event) => applyStrokePattern(event.target.value as StrokeDashPreset)}
+                >
+                  <option value="solid">实线</option>
+                  <option value="dashed">虚线</option>
+                  <option value="dotted">点线</option>
+                  <option value="dashdot">点划线</option>
+                </select>
+              </div>
+              <div className="field-row">
+                <span className="field-row__label">端点</span>
+                <select
+                  className="select"
+                  data-testid="stroke-cap"
+                  value={currentCap}
+                  onChange={(event) => applyStrokeCap(event.target.value as StrokeCap)}
+                >
+                  <option value="round">圆头</option>
+                  <option value="butt">平头</option>
+                  <option value="square">方头</option>
+                </select>
+              </div>
+              <div className="field-row">
+                <span className="field-row__label">拐角</span>
+                <select
+                  className="select"
+                  data-testid="stroke-join"
+                  value={currentJoin}
+                  onChange={(event) => applyStrokeJoin(event.target.value as StrokeJoin)}
+                >
+                  <option value="round">圆角</option>
+                  <option value="miter">尖角</option>
+                  <option value="bevel">斜切</option>
+                </select>
+              </div>
             </div>
           </Section>
         ) : null}
 
         {primary.type === 'group' && primary.ringStyle ? (
-          <Section title="当前所选环的式样" hint="只改这一个环">
+          <Section title="当前所选环的式样">
             <div className="benzene-style-options">
               <button
                 type="button"
@@ -682,7 +685,6 @@ export function ObjectPropertiesPanel() {
                 <em>交替双键</em>
               </button>
             </div>
-            <p className="section-note">切换式样会重排六个键的键级，不改变环的位置与大小。</p>
           </Section>
         ) : null}
 
@@ -849,7 +851,6 @@ export function ObjectPropertiesPanel() {
                 </button>
               ))}
             </div>
-            <p className="section-note">改变键型后，画布会立即按新的键级重新绘制。</p>
           </Section>
         ) : null}
 
@@ -874,6 +875,28 @@ export function ObjectPropertiesPanel() {
                 placeholder={ATOM_PRESETS.find((item) => item.element === primary.label.element)?.display ?? '无'}
                 onCommit={(value) => updateAtom({ group: value.trim() || null })}
               />
+            </div>
+            <div className="field-row">
+              <span className="field-row__label">元素大小</span>
+              <div className="input-unit input-unit--compact">
+                <input
+                  className="input"
+                  type="number"
+                  min={6}
+                  max={120}
+                  step={1}
+                  data-testid="atom-size"
+                  defaultValue={Math.round(primary.label.fontSize ?? ATOM_FONT_SIZE)}
+                  key={`atom-size-${primary.id}`}
+                  onBlur={(event) => {
+                    const next = Number(event.target.value);
+                    if (Number.isFinite(next)) {
+                      updateAtom({ fontSize: Math.max(6, Math.min(120, next)) });
+                    }
+                  }}
+                />
+                <em>px</em>
+              </div>
             </div>
             <div className="field-row">
               <span className="field-row__label">形式电荷</span>
@@ -966,24 +989,6 @@ export function ObjectPropertiesPanel() {
           </Section>
         ) : null}
 
-        <div className="props-hint" data-testid="props-style-hint">
-          <Icon name="palette" size={15} />
-          {leftDockOpen ? (
-            <p>填充、描边与不透明度在左侧调色板中设置；此处只编辑对象自身的几何、文本与化学属性。</p>
-          ) : (
-            <p>
-              左侧调色板已收窄为色条，色块仍可直接改色；
-              <button
-                type="button"
-                className="props-hint__link"
-                onClick={() => setLeftDockOpen(true)}
-              >
-                展开调色板
-              </button>
-              可调大小与不透明度。
-            </p>
-          )}
-        </div>
         </div>
       </div>
     </section>

@@ -70,15 +70,20 @@ export interface ChainBondGeometry {
 }
 
 /**
- * 锚点所在结构式的等比缩放：优先原子字号，其次环编组缩放，最后取相连键的 scale。
- * 新增键/原子用它继承已缩放结构的大小。
+ * 锚点所在结构式的等比缩放：优先已缩放键/环编组，孤立原子才用字号推导。
+ * baseFontSize 传入当前设置的元素大小，避免默认字号变化被误判为结构缩放。
  */
-export function bondAnchorScale(anchor: BondAnchor): number {
+export function bondAnchorScale(
+  anchor: BondAnchor,
+  baseFontSize = ATOM_FONT_SIZE
+): number {
   const values: number[] = [];
-  if (anchor.atom?.label.fontSize) values.push(anchor.atom.label.fontSize / ATOM_FONT_SIZE);
   if (anchor.group?.ringScale) values.push(anchor.group.ringScale);
   for (const bond of anchor.bonds) {
     if (typeof bond.scale === 'number' && bond.scale > 0) values.push(bond.scale);
+  }
+  if (values.length === 0 && anchor.atom?.label.fontSize) {
+    values.push(anchor.atom.label.fontSize / Math.max(1, baseFontSize));
   }
   if (values.length === 0) return 1;
   return Math.min(8, Math.max(0.05, Math.max(...values)));

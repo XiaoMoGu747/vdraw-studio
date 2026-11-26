@@ -222,6 +222,8 @@ interface Prefs {
   chemBondWidth: number;
   /** 双键/三键键距（页面 px）。 */
   chemBondSpacing: number;
+  /** 新建原子/元素标签的默认字号（px）。 */
+  chemAtomSize: number;
   chemBenzeneStyle: 'pauling' | 'kekule';
   showToolLabels: boolean;
   theme: ThemeMode;
@@ -285,6 +287,7 @@ export type UiDensity = 'compact' | 'standard' | 'comfortable';
 export const CHEM_BOND_LENGTH_DEFAULT = 40;
 export const CHEM_BOND_WIDTH_DEFAULT = 2.2;
 export const CHEM_BOND_SPACING_DEFAULT = 4.2;
+export const CHEM_ATOM_SIZE_DEFAULT = 16;
 /** 兼容旧命名：推荐值即默认值。 */
 export const CHEM_BOND_LENGTH_RECOMMENDED = CHEM_BOND_LENGTH_DEFAULT;
 export const CHEM_BOND_WIDTH_RECOMMENDED = CHEM_BOND_WIDTH_DEFAULT;
@@ -293,6 +296,7 @@ export const CHEM_BOND_SPACING_RECOMMENDED = CHEM_BOND_SPACING_DEFAULT;
 export const CHEM_BOND_LENGTH_RANGE = { min: 8, max: 400 } as const;
 export const CHEM_BOND_WIDTH_RANGE = { min: 0.2, max: 40 } as const;
 export const CHEM_BOND_SPACING_RANGE = { min: 0.2, max: 100 } as const;
+export const CHEM_ATOM_SIZE_RANGE = { min: 6, max: 120 } as const;
 
 const DEFAULT_PREFS: Prefs = {
   customTemplates: [],
@@ -315,6 +319,7 @@ const DEFAULT_PREFS: Prefs = {
   chemBondLength: CHEM_BOND_LENGTH_DEFAULT,
   chemBondWidth: CHEM_BOND_WIDTH_DEFAULT,
   chemBondSpacing: CHEM_BOND_SPACING_DEFAULT,
+  chemAtomSize: CHEM_ATOM_SIZE_DEFAULT,
   chemBenzeneStyle: 'kekule',
   showToolLabels: false,
   theme: 'light',
@@ -440,6 +445,8 @@ interface AppState {
   chemBondWidth: number;
   /** 新建双键/三键的平行线间距。 */
   chemBondSpacing: number;
+  /** 新建原子标签的默认字号（px）。 */
+  chemAtomSize: number;
   recent: RecentEntry[];
   /** 启动页「快捷模板」中的自定义尺寸。 */
   customTemplates: CanvasPreset[];
@@ -611,17 +618,18 @@ interface AppState {
   dismissToast: (id: string) => void;
   setChem: (patch: Partial<ChemToolState>) => void;
   setChemDefaults: (patch: Partial<ChemToolState>) => void;
-  /** 修改单个化学键参数；等比联动开启时三项按同一倍率调整。 */
+  /** 修改单个化学参数；等比联动开启时键长/键宽/键距/元素大小按同一倍率调整。 */
   setChemBondMetric: (
-    key: 'length' | 'width' | 'spacing',
+    key: 'length' | 'width' | 'spacing' | 'atomSize',
     value: number
   ) => void;
-  /** 恢复化学键三项默认值（40 / 2.2 / 4.2）。 */
+  /** 恢复化学参数默认值（40 / 2.2 / 4.2 / 16）。 */
   resetChemBondMetrics: () => void;
   /** 只改某一项，不影响另外两项（用于单项“默认”按钮/兼容旧入口）。 */
   setChemBondLength: (length: number) => void;
   setChemBondWidth: (width: number) => void;
   setChemBondSpacing: (spacing: number) => void;
+  setChemAtomSize: (size: number) => void;
   /** 在对象列表内复制单个对象（含编组子对象），并选中新副本。 */
   duplicateObject: (id: string) => void;
   /** 删除单个对象；原子被删时连带清理相连的键。 */
@@ -815,6 +823,10 @@ function readPrefs(): Prefs {
         typeof parsed.chemBondSpacing === 'number' && Number.isFinite(parsed.chemBondSpacing)
           ? clamp(parsed.chemBondSpacing, CHEM_BOND_SPACING_RANGE.min, CHEM_BOND_SPACING_RANGE.max)
           : DEFAULT_PREFS.chemBondSpacing,
+      chemAtomSize:
+        typeof parsed.chemAtomSize === 'number' && Number.isFinite(parsed.chemAtomSize)
+          ? clamp(parsed.chemAtomSize, CHEM_ATOM_SIZE_RANGE.min, CHEM_ATOM_SIZE_RANGE.max)
+          : DEFAULT_PREFS.chemAtomSize,
       // 旧偏好只有 eraserScope（全部/仅图形/仅化学），迁移到四项目标；
       // 新偏好缺字段时按"全部选中"，避免升级后橡皮静默失效。
       eraserTargets: normalizeEraserTargets(
@@ -930,6 +942,7 @@ export const useAppStore = create<AppState>((set, get) => {
     chemBondLength: prefs.chemBondLength,
     chemBondWidth: prefs.chemBondWidth,
     chemBondSpacing: prefs.chemBondSpacing,
+    chemAtomSize: prefs.chemAtomSize,
     recent: readRecent(),
     customTemplates: prefs.customTemplates,
     toasts: [],
@@ -1848,16 +1861,18 @@ export const useAppStore = create<AppState>((set, get) => {
     },
 
     setChemBondMetric: (key, value) => {
-      const normalize = (metric: 'length' | 'width' | 'spacing', raw: number) => {
+      const normalize = (metric: 'length' | 'width' | 'spacing' | 'atomSize', raw: number) => {
         const range =
           metric === 'length'
             ? CHEM_BOND_LENGTH_RANGE
             : metric === 'width'
               ? CHEM_BOND_WIDTH_RANGE
-              : CHEM_BOND_SPACING_RANGE;
+              : metric === 'spacing'
+                ? CHEM_BOND_SPACING_RANGE
+                : CHEM_ATOM_SIZE_RANGE;
         const clamped = clamp(raw, range.min, range.max);
-        return metric === 'length'
-          ? Math.round(clamped * 10) / 10
+        return metric === 'atomSize'
+          ? Math.round(clamped)
           : Math.round(clamped * 10) / 10;
       };
       const state = get();
@@ -1865,15 +1880,22 @@ export const useAppStore = create<AppState>((set, get) => {
       const current = {
         length: state.chemBondLength,
         width: state.chemBondWidth,
-        spacing: state.chemBondSpacing
+        spacing: state.chemBondSpacing,
+        atomSize: state.chemAtomSize
       };
       if (!state.chem.bondUniform) {
         const next = { ...current, [key]: normalized };
-        set({ chemBondLength: next.length, chemBondWidth: next.width, chemBondSpacing: next.spacing });
+        set({
+          chemBondLength: next.length,
+          chemBondWidth: next.width,
+          chemBondSpacing: next.spacing,
+          chemAtomSize: next.atomSize
+        });
         scheduleBrushPrefs({
           chemBondLength: next.length,
           chemBondWidth: next.width,
-          chemBondSpacing: next.spacing
+          chemBondSpacing: next.spacing,
+          chemAtomSize: next.atomSize
         });
         return;
       }
@@ -1881,15 +1903,22 @@ export const useAppStore = create<AppState>((set, get) => {
       const next = {
         length: normalize('length', current.length * factor),
         width: normalize('width', current.width * factor),
-        spacing: normalize('spacing', current.spacing * factor)
+        spacing: normalize('spacing', current.spacing * factor),
+        atomSize: normalize('atomSize', current.atomSize * factor)
       };
       // 被直接编辑的那一项以用户输入为准，避免浮点/取整导致输入值回跳。
       next[key] = normalized;
-      set({ chemBondLength: next.length, chemBondWidth: next.width, chemBondSpacing: next.spacing });
+      set({
+        chemBondLength: next.length,
+        chemBondWidth: next.width,
+        chemBondSpacing: next.spacing,
+        chemAtomSize: next.atomSize
+      });
       scheduleBrushPrefs({
         chemBondLength: next.length,
         chemBondWidth: next.width,
-        chemBondSpacing: next.spacing
+        chemBondSpacing: next.spacing,
+        chemAtomSize: next.atomSize
       });
     },
 
@@ -1897,12 +1926,14 @@ export const useAppStore = create<AppState>((set, get) => {
       set({
         chemBondLength: CHEM_BOND_LENGTH_DEFAULT,
         chemBondWidth: CHEM_BOND_WIDTH_DEFAULT,
-        chemBondSpacing: CHEM_BOND_SPACING_DEFAULT
+        chemBondSpacing: CHEM_BOND_SPACING_DEFAULT,
+        chemAtomSize: CHEM_ATOM_SIZE_DEFAULT
       });
       scheduleBrushPrefs({
         chemBondLength: CHEM_BOND_LENGTH_DEFAULT,
         chemBondWidth: CHEM_BOND_WIDTH_DEFAULT,
-        chemBondSpacing: CHEM_BOND_SPACING_DEFAULT
+        chemBondSpacing: CHEM_BOND_SPACING_DEFAULT,
+        chemAtomSize: CHEM_ATOM_SIZE_DEFAULT
       });
     },
 
@@ -1926,6 +1957,16 @@ export const useAppStore = create<AppState>((set, get) => {
       );
       set({ chemBondSpacing: value });
       scheduleBrushPrefs({ chemBondSpacing: value });
+    },
+
+    setChemAtomSize: (size) => {
+      const value = clamp(
+        Math.round(size),
+        CHEM_ATOM_SIZE_RANGE.min,
+        CHEM_ATOM_SIZE_RANGE.max
+      );
+      set({ chemAtomSize: value });
+      scheduleBrushPrefs({ chemAtomSize: value });
     },
 
     updateDoc: (next, record = true) => {

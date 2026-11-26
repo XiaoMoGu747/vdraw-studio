@@ -56,6 +56,7 @@ export function LayersPanel() {
   const template = TEMPLATE_MAP[doc.templateId];
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
+  const [objectScope, setObjectScope] = useState<'current' | 'all'>('current');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [collapsed, setCollapsed] = useState<string[]>([]);
   const [dropTarget, setDropTarget] = useState<{ id: string; position: LayerDropPosition } | null>(null);
@@ -96,11 +97,23 @@ export function LayersPanel() {
   }, [objectMenu]);
 
   const activeLayer = doc.layers.find((layer) => layer.id === doc.activeLayerId) ?? doc.layers[0];
-  const objects = activeLayer && activeLayer.kind !== 'folder' ? activeLayer.objects : [];
+  const currentObjects =
+    activeLayer && activeLayer.kind !== 'folder' ? activeLayer.objects : [];
+  const allObjects = doc.layers.flatMap((layer) =>
+    layer.kind === 'folder'
+      ? []
+      : layer.objects
+          .filter((object) => !object.parentId)
+          .slice()
+          .reverse()
+          .map((object) => ({ object, layerName: layer.name }))
+  );
+  const objects = objectScope === 'current' ? currentObjects : allObjects.map((item) => item.object);
   const folderChildren = activeLayer
     ? doc.layers.filter((layer) => layer.parentId === activeLayer.id).length
     : 0;
-  const objectsCollapsed = activeLayer ? collapsed.includes(activeLayer.id) : false;
+  const objectsCollapsed =
+    objectScope === 'current' && activeLayer ? collapsed.includes(activeLayer.id) : false;
 
   const toggleObjectVisible = (objectId: string) => {
     const object = getObject(doc, objectId);
@@ -227,6 +240,7 @@ export function LayersPanel() {
           data-layer-id={layer.id}
           role="button"
           tabIndex={0}
+          title={`${layer.name}\n点击切换当前图层；拖动调整顺序。`}
           className={[
             'layer-row',
             active ? 'is-active' : '',
@@ -461,7 +475,7 @@ export function LayersPanel() {
     moveObjectTo(drag.id, hit.id, hit.placement);
   };
 
-  const renderObject = (object: SceneObject, depth = 0): ReactNode => {
+  const renderObject = (object: SceneObject, depth = 0, layerName?: string): ReactNode => {
     const children =
       object.type === 'group'
         ? object.childIds
@@ -487,6 +501,7 @@ export function LayersPanel() {
           style={{ paddingLeft: 6 + depth * 13 }}
           role="button"
           tabIndex={0}
+          title={`${object.name}\n点击选择；拖动调整层级；右键可复制或删除。`}
           onClick={() => {
             if (objectDragClickRef.current) {
               objectDragClickRef.current = false;
@@ -533,6 +548,7 @@ export function LayersPanel() {
             <Icon name={TYPE_ICON[object.type] ?? 'layers'} size={13} />
           </span>
           <span className="object-row__name">{object.name}</span>
+          {layerName ? <span className="object-row__layer">{layerName}</span> : null}
           <span
             className="object-row__eye"
             role="button"
@@ -654,70 +670,99 @@ export function LayersPanel() {
         </div>
       </div>
 
-      <div className="layer-list">{roots.map((layer) => renderLayer(layer, 0))}</div>
+      <div
+        className="layer-list"
+        title="图层列表\n点击切换当前图层；拖动调整顺序，列表越靠上覆盖越靠下。"
+      >
+        {roots.map((layer) => renderLayer(layer, 0))}
+      </div>
 
       <div
         className={`layer-row layer-row--background${
           doc.page.backgroundVisible === false ? ' is-hidden' : ''
         }`}
         data-testid="background-layer"
-        title="页面背景（伪图层）"
+        title="背景图层\n页面背景，不参与对象选择；点击眼睛显示/隐藏，点击色块修改颜色。"
       >
         <span className="layer-row__chevron layer-row__chevron--empty" />
-        <button
-          type="button"
-          className="layer-row__toggle"
-          data-testid="background-eye"
-          title={doc.page.backgroundVisible === false ? '显示背景' : '隐藏背景'}
-          onClick={() =>
-            setPageBackgroundVisible(doc.page.backgroundVisible === false)
-          }
-        >
-          <Icon
-            name={doc.page.backgroundVisible === false ? 'eyeOff' : 'eye'}
-            size={15}
-          />
-        </button>
         <span
           className="layer-row__thumb layer-row__thumb--background"
           style={{ background: doc.page.background }}
-          title={`背景 ${doc.page.background}`}
+          aria-hidden="true"
         />
         <span className="layer-row__body">
           <span className="layer-row__name">背景</span>
-          <span className="layer-row__meta">
-            {doc.page.backgroundVisible === false
-              ? '背景已隐藏 · 显示透明棋盘格'
-              : `${doc.page.background} · 不参与对象选择`}
-          </span>
         </span>
-        <label className="layer-bg-color" title="背景色（点击修改）">
-          <span style={{ background: doc.page.background }} />
-          <input
-            type="color"
-            value={doc.page.background}
-            onChange={(event) => setPageBackground(event.target.value.toUpperCase())}
-          />
-        </label>
-      </div>
-
-      <p className="layer-drag-hint">
-        拖动图层可调整顺序；对象同样可拖动，列表中越靠上覆盖越靠下。右键对象可复制或删除。
-      </p>
-
-      <div className="panel-subhead">
-        <span>对象 · {activeLayer?.name ?? ''}</span>
-        <span className="panel-subhead__right">
-          {activeLayer?.kind === 'folder' ? `${folderChildren} 个子图层` : objects.length}
+        <span className="layer-tools">
           <button
             type="button"
-            className={`object-collapse${objectsCollapsed ? ' is-collapsed' : ''}`}
-            data-testid="objects-collapse"
-            title={objectsCollapsed ? '展开对象列表' : '折叠对象列表'}
-            onClick={() => activeLayer && toggleCollapsed(activeLayer.id)}
+            className="layer-row__toggle"
+            data-testid="background-eye"
+            aria-label={doc.page.backgroundVisible === false ? '显示背景' : '隐藏背景'}
+            title={`背景图层\n${doc.page.backgroundVisible === false ? '点击显示页面背景' : '点击隐藏页面背景'}`}
+            onClick={() =>
+              setPageBackgroundVisible(doc.page.backgroundVisible === false)
+            }
           >
-            <Icon name="chevronDown" size={12} />
+            <Icon
+              name={doc.page.backgroundVisible === false ? 'eyeOff' : 'eye'}
+              size={15}
+            />
           </button>
+          <label className="layer-bg-color" title="背景颜色\n点击色块修改页面背景色">
+            <span style={{ background: doc.page.background }} />
+            <input
+              type="color"
+              value={doc.page.background}
+              onChange={(event) => setPageBackground(event.target.value.toUpperCase())}
+            />
+          </label>
+        </span>
+      </div>
+
+      <div className="panel-subhead panel-subhead--objects">
+        <span>对象 · {objectScope === 'all' ? '所有图层' : activeLayer?.name ?? ''}</span>
+        <span className="panel-subhead__right">
+          <div
+            className="object-scope-filter"
+            role="group"
+            aria-label="对象筛选范围"
+            title="对象筛选\n切换查看当前图层或所有图层中的对象"
+          >
+            {(
+              [
+                ['current', '当前图层'],
+                ['all', '所有图层']
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                className={objectScope === value ? 'is-active' : ''}
+                data-testid={`object-scope-${value}`}
+                aria-pressed={objectScope === value}
+                onClick={() => setObjectScope(value)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {objectScope === 'current' && activeLayer?.kind === 'folder'
+            ? `${folderChildren} 个子图层`
+            : objectScope === 'current'
+              ? currentObjects.length
+              : `${allObjects.length} 个`}
+          {objectScope === 'current' ? (
+            <button
+              type="button"
+              className={`object-collapse${objectsCollapsed ? ' is-collapsed' : ''}`}
+              data-testid="objects-collapse"
+              title={objectsCollapsed ? '展开对象列表' : '折叠对象列表'}
+              onClick={() => activeLayer && toggleCollapsed(activeLayer.id)}
+            >
+              <Icon name="chevronDown" size={12} />
+            </button>
+          ) : null}
         </span>
       </div>
 
@@ -735,29 +780,32 @@ export function LayersPanel() {
             展开对象
           </button>
         </div>
-      ) : activeLayer?.kind === 'folder' ? (
-        <div className="objects-empty">
+      ) : objectScope === 'current' && activeLayer?.kind === 'folder' ? (
+        <div className="objects-empty" title="文件夹是一个容器\n把其他图层拖到这里即可归类；绘制时会使用其中的子图层">
           <span className="objects-empty__icon">
             <Icon name="folder" size={18} />
           </span>
-          <p>文件夹是一个容器</p>
-          <span>把其他图层拖到这里即可归类；绘制时会自动使用其中的子图层</span>
+          <p>空文件夹</p>
         </div>
       ) : objects.length === 0 ? (
-        <div className="objects-empty">
+        <div className="objects-empty" title="对象列表\n当前筛选条件下没有对象">
           <span className="objects-empty__icon">
             <Icon name="molecule" size={18} />
           </span>
-          <p>图层中还没有对象</p>
-          <span>从工具栏选择形状、钢笔或化学工具开始绘制</span>
+          <p>没有对象</p>
         </div>
       ) : (
-        <div className="object-list">
-          {objects
-            .filter((object) => !object.parentId)
-            .slice()
-            .reverse()
-            .map((object) => renderObject(object))}
+        <div
+          className="object-list"
+          title="对象列表\n拖动对象可调整层级；列表越靠上覆盖越靠下。右键对象可复制或删除。"
+        >
+          {objectScope === 'current'
+            ? currentObjects
+                .filter((object) => !object.parentId)
+                .slice()
+                .reverse()
+                .map((object) => renderObject(object))
+            : allObjects.map(({ object, layerName }) => renderObject(object, 0, layerName))}
         </div>
       )}
 
