@@ -1,4 +1,4 @@
-# VDraw Studio 0.2.0
+# VDraw Studio 0.3.0
 
 <p>
   <a href="https://github.com/XiaoMoGu747/vdraw-studio/actions/workflows/ci.yml"><img src="https://github.com/XiaoMoGu747/vdraw-studio/actions/workflows/ci.yml/badge.svg" alt="CI 状态"></a>
