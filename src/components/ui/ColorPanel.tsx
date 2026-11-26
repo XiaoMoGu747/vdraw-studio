@@ -252,6 +252,17 @@ export function ColorPanel({
   const wheelColor = rgbToHex(wheelRgb.r, wheelRgb.g, wheelRgb.b);
   const recentPreview = recent.slice(0, 3);
 
+  const openTarget = (which: Target) => {
+    // 再次点击同一目标（填充/描边）时手动收起；切换目标则保持展开。
+    if (open && target === which) {
+      setOpen(false);
+      return;
+    }
+    setTarget(which);
+    onRequestExpand?.();
+    setOpen(true);
+  };
+
   const renderSwatch = (which: Target) => {
     const value = which === 'fill' ? fill : stroke;
     const label = which === 'fill' ? '填充' : '描边';
@@ -266,11 +277,7 @@ export function ColorPanel({
           aria-label={`${label}颜色`}
           data-color-target={which}
           data-testid={which === 'fill' ? 'color-entry' : 'color-entry-stroke'}
-          onClick={() => {
-            setTarget(which);
-            onRequestExpand?.();
-            setOpen(true);
-          }}
+          onClick={() => openTarget(which)}
         >
           {value === null ? <NoneSwatch active /> : <span style={{ background: value }} />}
         </button>
@@ -332,11 +339,7 @@ export function ColorPanel({
                 data-testid={`palette-${which}-hex`}
                 title={`编辑${label}颜色：${value ?? '无'}`}
                 aria-label={`${label}颜色 ${value ?? '无'}`}
-                onClick={() => {
-                  setTarget(which);
-                  onRequestExpand?.();
-                  setOpen(true);
-                }}
+                onClick={() => openTarget(which)}
               >
                 {value ?? '无'}
               </button>

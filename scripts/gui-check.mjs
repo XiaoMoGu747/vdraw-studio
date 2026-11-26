@@ -370,8 +370,8 @@ try {
     ? fs.readdirSync(saveDir).filter((name) => name.endsWith('.vdraw'))
     : [];
 
-  // 返回启动页：保存后点击左上返回按钮，应回到启动页而不是退出应用。
-  await evaluate(`document.querySelector('[data-testid="back-to-start"]').click()`);
+  // 返回启动页：保存后点击右上角叉号，应回到启动页而不是退出应用。
+  await evaluate(`document.querySelector('.window-btn--close').click()`);
   await sleep(500);
   const navigation = await evaluate(
     `(() => ({

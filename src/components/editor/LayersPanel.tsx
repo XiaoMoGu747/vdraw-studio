@@ -57,6 +57,8 @@ export function LayersPanel() {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
   const [objectScope, setObjectScope] = useState<'current' | 'all'>('current');
+  const [layersSectionCollapsed, setLayersSectionCollapsed] = useState(false);
+  const [objectsSectionCollapsed, setObjectsSectionCollapsed] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [collapsed, setCollapsed] = useState<string[]>([]);
   const [dropTarget, setDropTarget] = useState<{ id: string; position: LayerDropPosition } | null>(null);
@@ -584,7 +586,11 @@ export function LayersPanel() {
   };
 
   return (
-    <div className="layers-panel">
+    <div
+      className={`layers-panel${layersSectionCollapsed ? ' is-layers-collapsed' : ''}${
+        objectsSectionCollapsed ? ' is-objects-collapsed' : ''
+      }`}
+    >
       <div className="panel-head">
         <div>
           <h3>图层</h3>
@@ -593,6 +599,21 @@ export function LayersPanel() {
           </span>
         </div>
         <div className="panel-head__actions" data-layer-menu>
+          <button
+            type="button"
+            className={`icon-btn icon-btn--sm${layersSectionCollapsed ? ' is-active' : ''}`}
+            title={layersSectionCollapsed ? '展开图层列表' : '收起图层列表，为画布腾出空间'}
+            aria-label={layersSectionCollapsed ? '展开图层列表' : '收起图层列表'}
+            aria-expanded={!layersSectionCollapsed}
+            data-testid="layers-section-collapse"
+            onClick={() => setLayersSectionCollapsed((value) => !value)}
+          >
+            <Icon
+              name="chevronDown"
+              size={15}
+              className={layersSectionCollapsed ? 'rotate-180' : undefined}
+            />
+          </button>
           <button
             type="button"
             className="icon-btn icon-btn--sm"
@@ -671,14 +692,18 @@ export function LayersPanel() {
       </div>
 
       <div
-        className="layer-list"
-        title="图层列表\n点击切换当前图层；拖动调整顺序，列表越靠上覆盖越靠下。"
+        className={`layer-section${layersSectionCollapsed ? ' is-collapsed' : ''}`}
+        data-testid="layer-section"
       >
-        {roots.map((layer) => renderLayer(layer, 0))}
-      </div>
+        <div
+          className="layer-list"
+          title="图层列表\n点击切换当前图层；拖动调整顺序，列表越靠上覆盖越靠下。"
+        >
+          {roots.map((layer) => renderLayer(layer, 0))}
+        </div>
 
-      <div
-        className={`layer-row layer-row--background${
+        <div
+          className={`layer-row layer-row--background${
           doc.page.backgroundVisible === false ? ' is-hidden' : ''
         }`}
         data-testid="background-layer"
@@ -718,8 +743,13 @@ export function LayersPanel() {
             />
           </label>
         </span>
+        </div>
       </div>
 
+      <div
+        className={`objects-section${objectsSectionCollapsed ? ' is-collapsed' : ''}`}
+        data-testid="objects-section"
+      >
       <div className="panel-subhead panel-subhead--objects">
         <span>对象 · {objectScope === 'all' ? '所有图层' : activeLayer?.name ?? ''}</span>
         <span className="panel-subhead__right">
@@ -752,20 +782,20 @@ export function LayersPanel() {
             : objectScope === 'current'
               ? currentObjects.length
               : `${allObjects.length} 个`}
-          {objectScope === 'current' ? (
-            <button
-              type="button"
-              className={`object-collapse${objectsCollapsed ? ' is-collapsed' : ''}`}
-              data-testid="objects-collapse"
-              title={objectsCollapsed ? '展开对象列表' : '折叠对象列表'}
-              onClick={() => activeLayer && toggleCollapsed(activeLayer.id)}
-            >
-              <Icon name="chevronDown" size={12} />
-            </button>
-          ) : null}
+          <button
+            type="button"
+            className={`object-collapse${objectsSectionCollapsed ? ' is-collapsed' : ''}`}
+            data-testid="objects-collapse"
+            aria-expanded={!objectsSectionCollapsed}
+            title={objectsSectionCollapsed ? '展开对象列表' : '收起对象列表，为画布腾出空间'}
+            onClick={() => setObjectsSectionCollapsed((value) => !value)}
+          >
+            <Icon name="chevronDown" size={12} />
+          </button>
         </span>
       </div>
 
+      <div className="objects-section__body">
       {objectsCollapsed ? (
         <div className="objects-empty objects-empty--collapsed" data-testid="objects-collapsed">
           <span className="objects-empty__icon">
@@ -808,6 +838,8 @@ export function LayersPanel() {
             : allObjects.map(({ object, layerName }) => renderObject(object, 0, layerName))}
         </div>
       )}
+      </div>
+      </div>
 
       <div className="panel-section panel-section--tight">
         <div className="info-rows">

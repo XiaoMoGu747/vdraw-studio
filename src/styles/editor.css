@@ -31,8 +31,8 @@
   -webkit-app-region: no-drag;
 }
 
-.titlebar__brand:hover {
-  background: var(--border-subtle);
+.titlebar__brand {
+  cursor: default;
 }
 
 .titlebar__app {
@@ -1662,56 +1662,22 @@
   flex: 0 0 auto;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 2px;
+  align-items: stretch;
   padding: 8px 0;
   background: var(--neutral-0);
   border-right: 1px solid var(--border);
-  /* 工具提示绝对定位在按钮右侧；overflow-x 若为 visible 会因另一轴 auto 变成
-     auto，产生底部横向滑动条。这里直接裁掉横向溢出并保留原生 title 提示。 */
-  overflow-x: clip;
-  overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: var(--border-2) transparent;
-}
-
-/* 工具过多：向右增列、同步加宽竖栏，而不是出现滚动条或滑动块。 */
-.tool-rail[data-multi='true'] {
-  width: calc(46px + (var(--rail-cols) - 1) * 36px);
-  display: grid;
-  grid-template-columns: repeat(var(--rail-cols), 34px);
-  grid-auto-rows: 34px;
-  align-content: start;
-  justify-content: center;
-  gap: 2px;
-  padding: 8px 4px;
   overflow: hidden;
 }
 
-.tool-rail[data-multi='true'] .tool-rail__group {
-  display: contents;
-}
-
-.tool-rail[data-multi='true'] .tool-rail__divider,
-.tool-rail[data-multi='true'] .rail-group-label,
-.tool-rail[data-multi='true'] .rail-btn__label {
-  display: none;
-}
-
-.tool-rail[data-multi='true'] .rail-btn {
-  width: 32px;
-  height: 32px;
-  justify-self: center;
-}
-
-.tool-rail[data-multi='true'] .tool-rail__group--tail {
-  grid-column: 1 / -1;
+.tool-rail__scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
   gap: 2px;
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid var(--border);
+  overflow: hidden;
 }
 
 .tool-rail__group {
@@ -1720,6 +1686,59 @@
   align-items: center;
   gap: 2px;
   width: 100%;
+}
+
+/* 底部操作区固定在竖栏底部：窄栏两行，扩宽/增列后并排两列。 */
+.tool-rail__group--tail {
+  flex: 0 0 auto;
+  margin-top: auto;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  gap: 2px;
+}
+
+/* 工具过多：只增加列数与横向宽度，底部操作区仍固定在底部。 */
+.tool-rail[data-multi='true'] {
+  width: calc(46px + (var(--rail-cols) - 1) * 36px);
+}
+
+.tool-rail[data-multi='true'] .tool-rail__scroll {
+  display: grid;
+  grid-template-columns: repeat(var(--rail-cols), 34px);
+  grid-auto-rows: 34px;
+  align-content: start;
+  justify-content: center;
+  gap: 2px;
+  padding: 0 4px;
+}
+
+.tool-rail[data-multi='true'] .tool-rail__scroll > .tool-rail__group {
+  display: contents;
+}
+
+.tool-rail[data-multi='true'] .tool-rail__scroll .tool-rail__divider,
+.tool-rail[data-multi='true'] .tool-rail__scroll .rail-group-label,
+.tool-rail[data-multi='true'] .rail-btn__label {
+  display: none;
+}
+
+.tool-rail[data-multi='true'] .tool-rail__scroll .rail-btn {
+  width: 32px;
+  height: 32px;
+  justify-self: center;
+}
+
+.tool-rail[data-multi='true'] .tool-rail__group--tail {
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 8px 4px 0;
+}
+
+.tool-rail[data-multi='true'] .tool-rail__group--tail .rail-btn {
+  flex: 1 1 0;
+  width: auto;
 }
 
 .tool-rail__divider {
@@ -1806,6 +1825,25 @@ html[data-rail-labels='true'] .rail-group-label {
 html[data-rail-labels='true'] .tool-rail__divider {
   width: auto;
   margin: 6px 2px;
+}
+
+/* 竖栏加宽后底部两个按钮并排，一人一列；始终贴底。 */
+html[data-rail-labels='true'] .tool-rail__group--tail {
+  flex-direction: row;
+  align-items: stretch;
+  gap: 2px;
+}
+
+html[data-rail-labels='true'] .tool-rail__group--tail .rail-btn {
+  flex: 1 1 0;
+  width: auto;
+  min-width: 0;
+  gap: 4px;
+  padding: 0 4px;
+}
+
+html[data-rail-labels='true'] .tool-rail__group--tail .rail-btn__label {
+  font-size: var(--fs-2xs);
 }
 
 html[data-rail-labels='true'] .rail-btn__more {
@@ -2047,27 +2085,47 @@ html[data-rail-labels='true'] .rail-btn::after {
   color: var(--accent-text);
 }
 
-.rail-btn::after {
-  content: attr(data-tip);
-  position: absolute;
-  left: calc(100% + 8px);
-  top: 50%;
-  transform: translateY(-50%) translateX(-3px);
-  padding: 4px 8px;
-  border-radius: var(--radius-sm);
+/* 竖栏工具提示：Portal 固定定位，窄栏/加宽/增列时内容与样式完全一致。 */
+.rail-tooltip {
+  position: fixed;
+  z-index: var(--z-tooltip);
+  width: max-content;
+  max-width: 268px;
+  transform: translateY(-50%);
+  padding: 8px;
+  border-radius: var(--radius-md);
   background: var(--neutral-900);
   color: var(--on-accent);
-  font-size: var(--fs-xs);
-  white-space: nowrap;
-  opacity: 0;
+  box-shadow: var(--shadow-md);
   pointer-events: none;
-  transition: opacity var(--motion-2) ease, transform var(--motion-2) ease;
-  z-index: var(--z-tooltip);
+  animation: rail-tooltip-in var(--motion-2) ease-out;
 }
 
-.rail-btn:hover::after {
-  opacity: 1;
-  transform: translateY(-50%) translateX(0);
+.rail-tooltip strong {
+  display: block;
+  margin-bottom: 2px;
+  font-size: var(--fs-xs);
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.rail-tooltip span {
+  display: block;
+  font-size: var(--fs-2xs);
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.78);
+  white-space: normal;
+}
+
+@keyframes rail-tooltip-in {
+  from {
+    opacity: 0;
+    transform: translateY(-50%) translateX(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(-50%) translateX(0);
+  }
 }
 
 /* ---- 左侧停靠栏：颜色 / 宽度 / 透明度 / 工具扩展 ---- */

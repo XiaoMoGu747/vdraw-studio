@@ -7,9 +7,12 @@ interface ConfirmDialogProps {
   hint?: string;
   confirmLabel?: string;
   cancelLabel?: string;
-  tone?: 'primary' | 'danger';
+  extraLabel?: string;
+  extraTone?: 'danger' | 'outline';
+  tone?: 'primary' | 'danger' | 'success';
   testId?: string;
   onConfirm: () => void;
+  onExtra?: () => void;
   onCancel: () => void;
 }
 
@@ -20,9 +23,12 @@ export function ConfirmDialog({
   hint,
   confirmLabel = '确定',
   cancelLabel = '取消',
+  extraLabel,
+  extraTone = 'danger',
   tone = 'primary',
   testId,
   onConfirm,
+  onExtra,
   onCancel
 }: ConfirmDialogProps) {
   return (
@@ -40,9 +46,25 @@ export function ConfirmDialog({
           >
             {cancelLabel}
           </button>
+          {extraLabel && onExtra ? (
+            <button
+              type="button"
+              className={`btn btn--sm ${extraTone === 'danger' ? 'btn--danger' : 'btn--outline'}`}
+              data-testid={testId ? `${testId}-extra` : undefined}
+              onClick={onExtra}
+            >
+              {extraLabel}
+            </button>
+          ) : null}
           <button
             type="button"
-            className={`btn btn--sm ${tone === 'danger' ? 'btn--danger' : 'btn--primary'}`}
+            className={`btn btn--sm ${
+              tone === 'danger'
+                ? 'btn--danger'
+                : tone === 'success'
+                  ? 'btn--success'
+                  : 'btn--primary'
+            }`}
             data-testid={testId ? `${testId}-confirm` : undefined}
             onClick={onConfirm}
           >

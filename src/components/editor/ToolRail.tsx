@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import type { CSSProperties } from 'react';
+import type { CSSProperties, FocusEvent as ReactFocusEvent, PointerEvent as ReactPointerEvent } from 'react';
+import { createPortal } from 'react-dom';
 import { RAIL_CATALOG, railEntry, railShortcut } from '../../core/rail';
 import type { RailEntry } from '../../core/rail';
 import { RAIL_GROUPS, TOOL_MAP } from '../../core/tools';
@@ -27,7 +28,29 @@ export function ToolRail() {
   const [managerOpen, setManagerOpen] = useState(false);
   const [dragging, setDragging] = useState<string | null>(null);
   const [railCols, setRailCols] = useState(1);
+  const [tooltip, setTooltip] = useState<{
+    label: string;
+    hint: string;
+    left: number;
+    top: number;
+  } | null>(null);
   const railRef = useRef<HTMLElement | null>(null);
+  const footerRef = useRef<HTMLDivElement | null>(null);
+
+  const showTooltip = (
+    event: ReactPointerEvent<HTMLButtonElement> | ReactFocusEvent<HTMLButtonElement>,
+    label: string,
+    hint: string
+  ) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    setTooltip({
+      label,
+      hint,
+      left: rect.right + 10,
+      top: Math.max(18, Math.min(window.innerHeight - 18, rect.top + rect.height / 2))
+    });
+  };
+  const hideTooltip = () => setTooltip(null);
 
   const activate = (entry: RailEntry) => {
     if (entry.chemistry) {
@@ -80,9 +103,16 @@ export function ToolRail() {
     const nav = railRef.current;
     if (!nav) return;
     const measure = () => {
-      const availableRows = Math.max(1, Math.floor((nav.clientHeight - 16) / 34));
+      // 显示工具名时竖栏已经横向扩宽，保持单列，底部按钮并排即可。
+      if (showToolLabels) {
+        setRailCols(1);
+        return;
+      }
+      // 底部两个按钮在窄栏中占两行、增列后占一行；按较高值预留，避免列数来回跳。
+      const footerHeight = Math.max(74, footerRef.current?.offsetHeight ?? 0);
+      const availableRows = Math.max(1, Math.floor((nav.clientHeight - footerHeight - 16) / 34));
       const groups = new Set(groupSignature.split('|').filter(Boolean)).size;
-      const neededRows = entries.length + 2 + Math.ceil(groups * 0.6);
+      const neededRows = entries.length + Math.ceil(groups * 0.6);
       setRailCols(Math.min(4, Math.max(1, Math.ceil(neededRows / availableRows))));
     };
     measure();
@@ -90,6 +120,17 @@ export function ToolRail() {
     observer.observe(nav);
     return () => observer.disconnect();
   }, [entries.length, groupSignature, showToolLabels]);
+
+  useEffect(() => {
+    if (!tooltip) return;
+    const hide = () => setTooltip(null);
+    window.addEventListener('resize', hide);
+    window.addEventListener('scroll', hide, true);
+    return () => {
+      window.removeEventListener('resize', hide);
+      window.removeEventListener('scroll', hide, true);
+    };
+  }, [tooltip]);
 
   const reorder = (sourceKey: string | null, targetKey: string) => {
     if (!sourceKey || sourceKey === targetKey) return;
@@ -109,6 +150,7 @@ export function ToolRail() {
         data-multi={railCols > 1 ? 'true' : 'false'}
         style={{ '--rail-cols': railCols } as CSSProperties}
       >
+        <div className="tool-rail__scroll">
         {entries.map((entry, index) => {
           const previous = entries[index - 1];
           const shortcut = railShortcut(entry.key);
@@ -117,7 +159,8 @@ export function ToolRail() {
             : entry.chemistry
               ? '打开化学横栏：化学键、元素、官能团、环系与反应箭头。'
               : '打开该工具组；可在扩展工具中调整常驻工具与顺序。';
-          const tip = `${entry.label}${shortcut ? ` · ${shortcut}` : ''}\n${hint ?? ''}`;
+          const tipLabel = `${entry.label}${shortcut ? ` · ${shortcut}` : ''}`;
+          const tipHint = hint ?? '';
           const groupStart = !previous || previous.group !== entry.group;
           const groupLabel = RAIL_GROUPS.find((group) => group.id === entry.group)?.label;
           return (
@@ -134,8 +177,10 @@ export function ToolRail() {
                 data-tool={entry.key}
                 aria-pressed={isActive(entry)}
                 aria-label={entry.label}
-                title={tip}
-                data-tip={tip}
+                onPointerEnter={(event) => showTooltip(event, tipLabel, tipHint)}
+                onPointerLeave={hideTooltip}
+                onFocus={(event) => showTooltip(event, tipLabel, tipHint)}
+                onBlur={hideTooltip}
                 onClick={() => activate(entry)}
               >
                 <Icon name={entry.icon} size={19} />
@@ -146,16 +191,32 @@ export function ToolRail() {
             </div>
           );
         })}
+        </div>
 
-        <div className="tool-rail__group tool-rail__group--tail">
-          <span className="tool-rail__divider" />
+        <div ref={footerRef} className="tool-rail__group tool-rail__group--tail">
           {/* 工具名开关放在导轨自身：默认纯图标时也一眼能看到「可以展开名字」。 */}
           <button
             type="button"
             className={`rail-btn${showToolLabels ? ' is-active' : ''}`}
-            title={showToolLabels ? '收起工具名（Ctrl+B）' : '显示工具名（Ctrl+B）'}
+            aria-label={showToolLabels ? '收起工具名' : '显示工具名'}
             aria-pressed={showToolLabels}
             data-testid="rail-labels"
+            onPointerEnter={(event) =>
+              showTooltip(
+                event,
+                showToolLabels ? '收起工具名' : '显示工具名',
+                `控制竖栏是否显示工具名称，当前${showToolLabels ? '已显示' : '仅显示图标'}。快捷键 Ctrl+B。`
+              )
+            }
+            onPointerLeave={hideTooltip}
+            onFocus={(event) =>
+              showTooltip(
+                event,
+                showToolLabels ? '收起工具名' : '显示工具名',
+                `控制竖栏是否显示工具名称，当前${showToolLabels ? '已显示' : '仅显示图标'}。快捷键 Ctrl+B。`
+              )
+            }
+            onBlur={hideTooltip}
             onClick={toggleToolLabels}
           >
             <Icon name="alignLeft" size={17} />
@@ -164,8 +225,16 @@ export function ToolRail() {
           <button
             type="button"
             className="rail-btn rail-btn--expand"
-            title="扩展工具"
+            aria-label="扩展工具"
             data-testid="rail-expand"
+            onPointerEnter={(event) =>
+              showTooltip(event, '扩展工具', '打开扩展工具面板，可拖拽排序、显示或隐藏常驻工具。')
+            }
+            onPointerLeave={hideTooltip}
+            onFocus={(event) =>
+              showTooltip(event, '扩展工具', '打开扩展工具面板，可拖拽排序、显示或隐藏常驻工具。')
+            }
+            onBlur={hideTooltip}
             onClick={() => setManagerOpen(true)}
           >
             <Icon name="grid4" size={18} />
@@ -173,6 +242,20 @@ export function ToolRail() {
           </button>
         </div>
       </nav>
+
+      {tooltip
+        ? createPortal(
+            <div
+              className="rail-tooltip"
+              role="tooltip"
+              style={{ left: tooltip.left, top: tooltip.top }}
+            >
+              <strong>{tooltip.label}</strong>
+              {tooltip.hint ? <span>{tooltip.hint}</span> : null}
+            </div>,
+            document.body
+          )
+        : null}
 
       {managerOpen ? (
         <Modal

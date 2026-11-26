@@ -181,6 +181,118 @@ async function runSmokeFlow(win, smokeErrors) {
   );
   await screenshot('smoke-editor-layers.png');
 
+  // ---- 竖栏：底部操作区固定、窄栏两行/宽栏两列、工具提示内容一致 ----
+  let railPolish = { ok: false };
+  try {
+    const readRailLayout = `(() => {
+      const rail = document.querySelector('[data-testid="tool-rail"]');
+      const tail = rail?.querySelector('.tool-rail__group--tail');
+      const buttons = tail ? [...tail.querySelectorAll('.rail-btn')] : [];
+      const rect = (el) => {
+        const r = el?.getBoundingClientRect();
+        return r ? { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height } : null;
+      };
+      return {
+        rail: rect(rail),
+        tail: rect(tail),
+        buttons: buttons.map(rect),
+        direction: tail ? getComputedStyle(tail).flexDirection : null
+      };
+    })()`;
+    const narrow = await readDom(win, readRailLayout);
+    await readDom(
+      win,
+      `document.querySelector('[data-tool="select"]')?.dispatchEvent(
+        new PointerEvent('pointerover', { bubbles: true, pointerType: 'mouse' })
+      )`
+    );
+    await sleep(160);
+    const narrowTip = await readDom(
+      win,
+      `(() => {
+        const tip = document.querySelector('.rail-tooltip');
+        return {
+          open: Boolean(tip),
+          label: tip?.querySelector('strong')?.textContent || '',
+          hint: tip?.querySelector('span')?.textContent || '',
+          position: tip ? getComputedStyle(tip).position : null
+        };
+      })()`
+    );
+    await readDom(
+      win,
+      `document.querySelector('[data-tool="select"]')?.dispatchEvent(
+        new PointerEvent('pointerout', { bubbles: true, pointerType: 'mouse' })
+      )`
+    );
+    await readDom(win, `document.querySelector('[data-testid="rail-labels"]')?.click()`);
+    await sleep(260);
+    const wide = await readDom(win, readRailLayout);
+    await readDom(
+      win,
+      `document.querySelector('[data-tool="select"]')?.dispatchEvent(
+        new PointerEvent('pointerover', { bubbles: true, pointerType: 'mouse' })
+      )`
+    );
+    await sleep(160);
+    const wideTip = await readDom(
+      win,
+      `(() => {
+        const tip = document.querySelector('.rail-tooltip');
+        return {
+          open: Boolean(tip),
+          label: tip?.querySelector('strong')?.textContent || '',
+          hint: tip?.querySelector('span')?.textContent || '',
+          position: tip ? getComputedStyle(tip).position : null
+        };
+      })()`
+    );
+    await readDom(
+      win,
+      `document.querySelector('[data-tool="select"]')?.dispatchEvent(
+        new PointerEvent('pointerout', { bubbles: true, pointerType: 'mouse' })
+      )`
+    );
+    await readDom(win, `document.querySelector('[data-testid="rail-labels"]')?.click()`);
+    await sleep(220);
+    const atBottom = (layout) =>
+      Boolean(
+        layout?.rail &&
+          layout?.tail &&
+          Math.abs(layout.rail.bottom - layout.tail.bottom) <= 10
+      );
+    const narrowStacked = Boolean(
+      narrow?.buttons?.length === 2 &&
+        narrow.buttons[0].bottom <= narrow.buttons[1].top + 1
+    );
+    const wideColumns = Boolean(
+      wide?.buttons?.length === 2 &&
+        wide.buttons[0].right <= wide.buttons[1].left + 1
+    );
+    railPolish = {
+      ok:
+        atBottom(narrow) &&
+        atBottom(wide) &&
+        wideColumns &&
+        narrowTip.open &&
+        wideTip.open &&
+        narrowTip.position === 'fixed' &&
+        wideTip.position === 'fixed' &&
+        narrowTip.label === wideTip.label &&
+        narrowTip.hint === wideTip.hint &&
+        wideTip.label.includes('选择'),
+      narrow,
+      wide,
+      narrowTip,
+      wideTip,
+      narrowStacked,
+      wideColumns
+    };
+  } catch (error) {
+    railPolish = { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+  console.log('RAIL_POLISH ' + JSON.stringify(railPolish));
+
   // 吸附开关会持久化到 localStorage；上一次人工验证可能把它关掉，
   // 导致缩放/旋转参考线断言偶发失败。冒烟开始前强制开启。
   await readDom(
@@ -325,6 +437,14 @@ async function runSmokeFlow(win, smokeErrors) {
     }
     await sleep(150);
   };
+
+  // 化学参数会持久化到 localStorage；上一轮冒烟/人工验证可能留下自定义键长，
+  // 使依赖默认 40px 键长的几何断言失稳。冒烟开始前恢复默认。
+  await selectTool('bond');
+  await readDom(win, `document.querySelector('[data-testid="chem-bond-defaults"]')?.click()`);
+  await sleep(180);
+  await selectTool('select');
+
   /** 笔刷预设点击后轮询激活态，避免面板动画/浮层残留导致后续用例画错笔刷。 */
   const selectBrushPreset = async (id) => {
     await readDom(win, `document.querySelector('[data-brush="${id}"]')?.click()`);
@@ -547,6 +667,13 @@ async function runSmokeFlow(win, smokeErrors) {
     })()`
   );
   await ensurePaletteOpen();
+  await readDom(win, `document.querySelector('[data-testid="color-entry"]')?.click()`);
+  await sleep(220);
+  const paletteToggleClosed = await readDom(
+    win,
+    `!document.querySelector('[data-testid="color-popover"]')`
+  );
+  await ensurePaletteOpen();
   const colorModes = await readDom(
     win,
     `(() => ({
@@ -563,17 +690,17 @@ async function runSmokeFlow(win, smokeErrors) {
   await readDom(win, clickExpression(0.21, 0.29));
   await sleep(260);
   await ensurePaletteOpen();
-  await readDom(win, `document.querySelector('[data-color-mode="palette"]').click()`);
+  await readDom(win, `Boolean(document.querySelector('[data-color-mode="palette"]')?.click())`);
   await sleep(260);
   const paletteGrid = await readDom(win, `document.querySelectorAll('.color-grid .swatch').length`);
-  await readDom(win, `document.querySelector('.color-grid .swatch').click()`);
+  await readDom(win, `Boolean(document.querySelector('.color-grid .swatch')?.click())`);
   await sleep(300);
   const fillApplied = await readDom(
     win,
     `document.querySelector('.scene-layer rect')?.getAttribute('fill') || null`
   );
 
-  await readDom(win, `document.querySelector('[data-color-mode="slider"]').click()`);
+  await readDom(win, `Boolean(document.querySelector('[data-color-mode="slider"]')?.click())`);
   await sleep(260);
   const sliderMode = await readDom(
     win,
@@ -583,9 +710,9 @@ async function runSmokeFlow(win, smokeErrors) {
     }))()`
   );
 
-  await readDom(win, `document.querySelector('[data-color-mode="palette"]').click()`);
+  await readDom(win, `Boolean(document.querySelector('[data-color-mode="palette"]')?.click())`);
   await sleep(220);
-  await readDom(win, `document.querySelector('.color-grid .swatch').click()`);
+  await readDom(win, `Boolean(document.querySelector('.color-grid .swatch')?.click())`);
   await sleep(300);
   const paletteApplied = await readDom(
     win,
@@ -779,6 +906,19 @@ async function runSmokeFlow(win, smokeErrors) {
     `(() => ({
       panelTool: document.querySelector('[data-testid="tool-options"]')?.getAttribute('data-tool-panel'),
       ringCards: document.querySelectorAll('[data-ring]').length,
+      ringIcons: [...document.querySelectorAll('[data-ring]')].filter((card) => {
+        const svg = card.querySelector('svg');
+        return svg && svg.getBoundingClientRect().width >= 20;
+      }).length,
+      ringIconLabels: [...document.querySelectorAll('[data-ring]')].map(
+        (card) => card.textContent?.trim() || ''
+      ),
+      ringBenzeneCircle: Boolean(
+        document.querySelector('[data-ring="benzene"] svg circle')
+      ),
+      ringCyclohexaneLines: document.querySelectorAll(
+        '[data-ring="cyclohexane"] svg line'
+      ).length,
       benzeneModes: document.querySelectorAll('[data-benzene-style]').length,
       benzeneInsert: Boolean(document.querySelector('[data-testid="benzene-insert"]'))
     }))()`
@@ -792,6 +932,10 @@ async function runSmokeFlow(win, smokeErrors) {
     categories: bondPanel.categories,
     panels: bondPanel.panels,
     ringCards: ringPanel.ringCards,
+    ringIcons: ringPanel.ringIcons,
+    ringIconLabels: ringPanel.ringIconLabels,
+    ringBenzeneCircle: ringPanel.ringBenzeneCircle,
+    ringCyclohexaneLines: ringPanel.ringCyclohexaneLines,
     benzeneModes: ringPanel.benzeneModes,
     benzeneInsert: ringPanel.benzeneInsert,
     chemDock: bondPanel.open,
@@ -1257,7 +1401,7 @@ async function runSmokeFlow(win, smokeErrors) {
       chip: document.querySelector('.titlebar__unsaved')?.textContent || null,
       title: document.querySelector('.titlebar__doc')?.textContent || null,
       saveButton: Boolean(document.querySelector('[data-testid="save-button"]')),
-      backButton: Boolean(document.querySelector('[data-testid="back-to-start"]'))
+      noBackButton: !document.querySelector('[data-testid="back-to-start"]')
     }))()`
   );
   const savedPath = path.join(outDir, 'smoke-document.vdraw');
@@ -2383,7 +2527,7 @@ async function runSmokeFlow(win, smokeErrors) {
   await sleep(220);
   await selectTool('brush');
   await ensurePaletteOpen();
-  await readDom(win, `document.querySelector('[data-color-mode="palette"]').click()`);
+  await readDom(win, `Boolean(document.querySelector('[data-color-mode="palette"]')?.click())`);
   await sleep(220);
   const brushColor = await readDom(
     win,
@@ -2503,9 +2647,9 @@ async function runSmokeFlow(win, smokeErrors) {
   await sleep(240);
   await readDom(win, `document.querySelector('[data-color-target="fill"]').click()`);
   await sleep(120);
-  await readDom(win, `document.querySelector('[data-color-mode="palette"]').click()`);
+  await readDom(win, `Boolean(document.querySelector('[data-color-mode="palette"]')?.click())`);
   await sleep(200);
-  await readDom(win, `document.querySelector('.color-grid .swatch').click()`);
+  await readDom(win, `Boolean(document.querySelector('.color-grid .swatch')?.click())`);
   await sleep(220);
   const bucketColor = await readDom(
     win,
@@ -4128,6 +4272,7 @@ async function runSmokeFlow(win, smokeErrors) {
     context: { contextInfo, propertiesInfo, modalClosed },
     appearance: {
       colorPanelOpened,
+      paletteToggleClosed,
       fillApplied,
       paletteApplied,
       widthDrag,
@@ -6280,6 +6425,53 @@ async function runSmokeFlow(win, smokeErrors) {
       `document.querySelector('[data-testid="object-scope-current"]')?.getAttribute('aria-pressed') === 'true'`
     );
 
+    const panelHeights = await readDom(
+      win,
+      `(() => {
+        const layer = document.querySelector('[data-testid="layer-section"]');
+        const objects = document.querySelector('[data-testid="objects-section"]');
+        return {
+          layer: layer?.getBoundingClientRect().height ?? 0,
+          objects: objects?.getBoundingClientRect().height ?? 0
+        };
+      })()`
+    );
+    await readDom(win, `document.querySelector('[data-testid="layers-section-collapse"]')?.click()`);
+    await sleep(180);
+    const layersCollapsedState = await readDom(
+      win,
+      `(() => {
+        const layer = document.querySelector('[data-testid="layer-section"]');
+        const objects = document.querySelector('[data-testid="objects-section"]');
+        return {
+          hidden: !layer || layer.getBoundingClientRect().height < 1,
+          objects: objects?.getBoundingClientRect().height ?? 0
+        };
+      })()`
+    );
+    await readDom(win, `document.querySelector('[data-testid="layers-section-collapse"]')?.click()`);
+    await sleep(180);
+    await readDom(win, `document.querySelector('[data-testid="objects-collapse"]')?.click()`);
+    await sleep(180);
+    const objectsCollapsedState = await readDom(
+      win,
+      `(() => {
+        const body = document.querySelector('.objects-section__body');
+        const layer = document.querySelector('[data-testid="layer-section"]');
+        return {
+          bodyHidden: !body || body.getBoundingClientRect().height < 1,
+          layer: layer?.getBoundingClientRect().height ?? 0
+        };
+      })()`
+    );
+    await readDom(win, `document.querySelector('[data-testid="objects-collapse"]')?.click()`);
+    await sleep(180);
+    const sectionsRestored = await readDom(
+      win,
+      `Boolean(document.querySelector('[data-testid="layer-section"]')?.getBoundingClientRect().height) &&
+       Boolean(document.querySelector('.objects-section__body')?.getBoundingClientRect().height)`
+    );
+
     await readDom(win, `document.querySelector('[data-testid="right-sidebar-collapse"]')?.click()`);
     await sleep(220);
     const collapsed = await readDom(win, `!document.querySelector('.right-sidebar')`);
@@ -6304,11 +6496,20 @@ async function runSmokeFlow(win, smokeErrors) {
         allState.layerTags > 0 &&
         allState.title.startsWith('对象列表') &&
         backState &&
+        layersCollapsedState.hidden &&
+        layersCollapsedState.objects > panelHeights.objects &&
+        objectsCollapsedState.bodyHidden &&
+        objectsCollapsedState.layer > panelHeights.layer &&
+        sectionsRestored &&
         collapsed &&
         restored,
       base,
       allState,
       backState,
+      panelHeights,
+      layersCollapsedState,
+      objectsCollapsedState,
+      sectionsRestored,
       collapsed,
       restored
     };
@@ -6363,10 +6564,19 @@ async function runSmokeFlow(win, smokeErrors) {
     await sleep(220);
     const leaveDialog = await readDom(
       win,
-      `(() => ({
-        open: Boolean(document.querySelector('[data-testid="leave-document-confirm"]')),
-        modal: Boolean(document.querySelector('.confirm-dialog__icon'))
-      }))()`
+      `(() => {
+        const pick = (id) => document.querySelector('[data-testid="leave-document-confirm-' + id + '"]');
+        return {
+          open: Boolean(document.querySelector('[data-testid="leave-document-confirm"]')),
+          modal: Boolean(document.querySelector('.confirm-dialog__icon')),
+          title: document.querySelector('.modal__head h3, .modal h3')?.textContent || '',
+          cancel: pick('cancel')?.textContent?.trim() || '',
+          extra: pick('extra')?.textContent?.trim() || '',
+          confirm: pick('confirm')?.textContent?.trim() || '',
+          extraDanger: Boolean(pick('extra')?.classList.contains('btn--danger')),
+          confirmSuccess: Boolean(pick('confirm')?.classList.contains('btn--success'))
+        };
+      })()`
     );
     await readDom(
       win,
@@ -6385,6 +6595,11 @@ async function runSmokeFlow(win, smokeErrors) {
         !renamed.editing &&
         leaveDialog.open &&
         leaveDialog.modal &&
+        leaveDialog.cancel === '取消' &&
+        leaveDialog.extra === '退出' &&
+        leaveDialog.confirm === '保存并退出' &&
+        leaveDialog.extraDanger &&
+        leaveDialog.confirmSuccess &&
         leaveCanceled,
       titleEditOpen,
       renamed,
@@ -6399,7 +6614,18 @@ async function runSmokeFlow(win, smokeErrors) {
   // ---- 最近文件：双击重命名、右键菜单、与画布标题双向同步 ----
   let recentSync = { ok: false };
   try {
-    await readDom(win, `document.querySelector('.titlebar__brand')?.click()`);
+    await readDom(win, `document.querySelector('.window-btn--close')?.click()`);
+    await sleep(220);
+    const exitWithDialog = await readDom(
+      win,
+      `Boolean(document.querySelector('[data-testid="leave-document-confirm-extra"]'))`
+    );
+    if (exitWithDialog) {
+      await readDom(
+        win,
+        `document.querySelector('[data-testid="leave-document-confirm-extra"]')?.click()`
+      );
+    }
     await sleep(520);
     const recentCount = await readDom(
       win,
@@ -6533,7 +6759,18 @@ async function runSmokeFlow(win, smokeErrors) {
         `document.querySelector('[data-testid="doc-title"]')?.textContent || null`
       );
 
-      await readDom(win, `document.querySelector('.titlebar__brand')?.click()`);
+      await readDom(win, `document.querySelector('.window-btn--close')?.click()`);
+      await sleep(220);
+      const exitAgain = await readDom(
+        win,
+        `Boolean(document.querySelector('[data-testid="leave-document-confirm-extra"]'))`
+      );
+      if (exitAgain) {
+        await readDom(
+          win,
+          `document.querySelector('[data-testid="leave-document-confirm-extra"]')?.click()`
+        );
+      }
       await sleep(520);
       const syncedRecentName = await readDom(
         win,
@@ -6628,6 +6865,7 @@ async function runSmokeFlow(win, smokeErrors) {
     editorInfo.scrollOverflowX > 1 ||
     editorInfo.scrollOverflowY > 1 ||
     !colorPanelOpened.open ||
+    !paletteToggleClosed ||
     colorPanelOpened.indicator ||
     !colorModes.fillNone ||
     !colorModes.strokeNone ||
@@ -6726,6 +6964,11 @@ async function runSmokeFlow(win, smokeErrors) {
     chemInfo.categories !== 6 ||
     chemInfo.panels < 1 ||
     chemInfo.ringCards < 5 ||
+    chemInfo.ringIcons !== chemInfo.ringCards ||
+    !chemInfo.ringBenzeneCircle ||
+    chemInfo.ringCyclohexaneLines < 6 ||
+    !chemInfo.ringIconLabels.includes('苯环') ||
+    !chemInfo.ringIconLabels.includes('环己烷') ||
     chemInfo.benzeneModes !== 2 ||
     !chemInfo.benzeneInsert ||
     afterPauling !== 11 ||
@@ -6794,7 +7037,7 @@ async function runSmokeFlow(win, smokeErrors) {
     !savedKekule ||
     saveInfo.chip !== '已保存' ||
     !saveInfo.saveButton ||
-    !saveInfo.backButton ||
+    !saveInfo.noBackButton ||
     afterDirtyRect !== 23 ||
     afterOpen !== 22 ||
     !importDialogOpen ||
@@ -7144,6 +7387,7 @@ async function runSmokeFlow(win, smokeErrors) {
     scenarioFailures.length > 0 ||
     !imageImport.ok ||
     !batchImport.ok ||
+    !railPolish.ok ||
     !chemFocus.ok ||
     !chemExtras.ok ||
     !layersPanel.ok ||

@@ -225,6 +225,21 @@ svg {
   filter: brightness(0.94);
 }
 
+.btn--success {
+  background: var(--success-text);
+  color: var(--neutral-0);
+  box-shadow: var(--shadow-sm);
+}
+
+.btn--success:hover {
+  filter: brightness(0.94);
+}
+
+[data-theme='dark'] .btn--success {
+  background: var(--success);
+  color: var(--neutral-950);
+}
+
 .confirm-dialog {
   display: flex;
   align-items: flex-start;

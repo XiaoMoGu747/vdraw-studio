@@ -621,12 +621,7 @@ export function ToolModeBar() {
                   setTool('ring');
                 }}
               >
-                <RingGlyph
-                  template={template}
-                  width={22}
-                  height={18}
-                  benzeneStyle={chem.benzeneStyle}
-                />
+                <RingGlyph template={template} width={28} height={24} />
                 {template.name}
               </button>
             ))}

@@ -80,6 +80,65 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+}
+
+.right-sidebar__body:has(.layers-panel) {
+  overflow: hidden;
+}
+
+.layer-section {
+  flex: 0 1 auto;
+  min-height: 72px;
+  max-height: 44%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.layer-section.is-collapsed {
+  display: none;
+}
+
+.layer-section .layer-row--background {
+  flex: none;
+}
+
+.objects-section {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.objects-section.is-collapsed {
+  flex: 0 0 auto;
+}
+
+.objects-section.is-collapsed .objects-section__body {
+  display: none;
+}
+
+.objects-section__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.layers-panel.is-objects-collapsed .layer-section {
+  flex: 1 1 auto;
+  max-height: none;
+}
+
+.layers-panel.is-objects-collapsed .layer-list {
+  max-height: none;
+}
+
+.objects-section__body .object-list {
+  min-height: 0;
 }
 
 .right-sidebar__head {
@@ -488,10 +547,14 @@
 }
 
 .layer-list {
+  flex: 1 1 auto;
+  min-height: 0;
   padding: 0 8px;
   display: flex;
   flex-direction: column;
   gap: 2px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 .layer-row {

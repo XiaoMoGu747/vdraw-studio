@@ -4,6 +4,7 @@ import { Icon } from '../ui/Icon';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { MenuBar } from './MenuBar';
 import { TopActions } from './TopActions';
+import { useFileActions } from './useFileActions';
 
 export function TitleBar() {
   const docName = useAppStore((state) => state.doc.name);
@@ -16,6 +17,7 @@ export function TitleBar() {
   const [draft, setDraft] = useState(docName);
   const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
   const cancelled = useRef(false);
+  const fileActions = useFileActions();
   const bridge = window.vdraw;
 
   useEffect(() => {
@@ -38,23 +40,33 @@ export function TitleBar() {
     renameDocument(draft);
   };
 
+  const exitCanvas = () => {
+    if (isDirty) {
+      setLeaveConfirmOpen(true);
+      return;
+    }
+    goToStart(true);
+  };
+
+  const saveAndExit = async () => {
+    const saved = await fileActions.save();
+    if (!saved) return;
+    setLeaveConfirmOpen(false);
+    goToStart(true);
+  };
+
   return (
     <>
     <header className="titlebar">
       <div className="titlebar__left">
-        <button
-          type="button"
-          className="titlebar__brand"
-          title="返回启动页"
-          onClick={() => goToStart()}
-        >
+        <div className="titlebar__brand" title="VDraw Studio">
           <span className="brand-mark brand-mark--sm">
             <Icon name="logo" size={14} strokeWidth={2} />
           </span>
           <span className="titlebar__app">
             VDraw <em>Studio</em>
           </span>
-        </button>
+        </div>
 
         <MenuBar />
       </div>
@@ -127,12 +139,9 @@ export function TitleBar() {
             <button
               type="button"
               className="window-btn window-btn--close"
-              aria-label="返回启动页"
-              title="返回启动页（未保存的修改会先确认）"
-              onClick={() => {
-                if (isDirty) setLeaveConfirmOpen(true);
-                else goToStart();
-              }}
+              aria-label="退出画布"
+              title="退出画布（未保存的修改会先确认）"
+              onClick={exitCanvas}
             >
               <Icon name="close" size={14} />
             </button>
@@ -145,17 +154,20 @@ export function TitleBar() {
     </header>
     {leaveConfirmOpen ? (
       <ConfirmDialog
-        title="返回启动页"
-        message="当前文档有未保存的修改，返回启动页后这些修改会丢失。"
-        hint="可以先取消并保存文档，再返回启动页。"
-        confirmLabel="仍要返回"
-        cancelLabel="继续编辑"
-        tone="danger"
+        title="退出画布"
+        message="当前文档有未保存的修改。"
+        hint="可以直接退出并丢弃修改，也可以先保存再退出。"
+        cancelLabel="取消"
+        extraLabel="退出"
+        extraTone="danger"
+        confirmLabel="保存并退出"
+        tone="success"
         testId="leave-document-confirm"
-        onConfirm={() => {
+        onExtra={() => {
           setLeaveConfirmOpen(false);
           goToStart(true);
         }}
+        onConfirm={() => void saveAndExit()}
         onCancel={() => setLeaveConfirmOpen(false)}
       />
     ) : null}

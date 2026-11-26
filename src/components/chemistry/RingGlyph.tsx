@@ -19,7 +19,9 @@ export function RingGlyph({
 }: RingGlyphProps) {
   const points = useMemo<Vec[]>(() => {
     const bounds = ringBounds(template.atoms);
-    const padding = 10;
+    // 模板按钮里的图标只有 20 多像素，固定 10px 内边距会把环缩成一个点。
+    // 小尺寸改用自适应内边距，让苯环/环己烷等在按钮左侧清晰可辨。
+    const padding = Math.min(width, height) <= 32 ? 2 : 10;
     const scale = Math.min(
       (width - padding * 2) / Math.max(bounds.width, 0.3),
       (height - padding * 2) / Math.max(bounds.height, 0.3)
@@ -74,7 +76,7 @@ export function RingGlyph({
               x2={segment.x2}
               y2={segment.y2}
               stroke="currentColor"
-              strokeWidth={1.2}
+              strokeWidth={width <= 32 ? 1.35 : 1.2}
               strokeLinecap="round"
             />
           ))}
@@ -87,7 +89,8 @@ export function RingGlyph({
           ))}
         </g>
       ))}
-      {template.id === 'benzene' && benzeneStyle === 'pauling' ? (
+      {template.id === 'benzene' &&
+      (benzeneStyle === 'pauling' || (width <= 32 && !benzeneStyle)) ? (
         (() => {
           const center = points.reduce(
             (acc, point) => ({
@@ -108,7 +111,7 @@ export function RingGlyph({
               r={radius * 0.55}
               fill="none"
               stroke="currentColor"
-              strokeWidth={1.2}
+              strokeWidth={width <= 32 ? 1.35 : 1.2}
             />
           );
         })()
@@ -121,8 +124,8 @@ export function RingGlyph({
             y={points[index].y + 0.5}
             textAnchor="middle"
             dominantBaseline="middle"
-            fontSize={9.5}
-            fontWeight={600}
+            fontSize={width <= 32 ? 8 : 9.5}
+            fontWeight={700}
             fontFamily="inherit"
             fill="currentColor"
             stroke="var(--ring-label-bg, #ffffff)"

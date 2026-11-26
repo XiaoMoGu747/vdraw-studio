@@ -61,7 +61,6 @@ export function MenuBar() {
   const viewportSize = useAppStore((state) => state.viewportSize);
 
   const startDocument = useAppStore((state) => state.startDocument);
-  const goToStart = useAppStore((state) => state.goToStart);
   const notify = useAppStore((state) => state.notify);
   const undo = useAppStore((state) => state.undo);
   const redo = useAppStore((state) => state.redo);
@@ -230,10 +229,8 @@ export function MenuBar() {
           id: 'export-selection',
           label: '导出选中对象…',
           disabled: !hasSelection,
-          onSelect: () => openExportPanel(undefined, 'selection'),
-          separatorAfter: true
-        },
-        { id: 'templates', label: '返回启动页 / 模板', onSelect: goToStart }
+          onSelect: () => openExportPanel(undefined, 'selection')
+        }
       ]
     },
     {

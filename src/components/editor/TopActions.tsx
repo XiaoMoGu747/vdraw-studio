@@ -16,7 +16,6 @@ export function TopActions() {
   const toggleExportTransparent = useAppStore((state) => state.toggleExportTransparent);
   const openExportPanel = useAppStore((state) => state.openExportPanel);
   const fileActions = useFileActions();
-  const goToStart = useAppStore((state) => state.goToStart);
   const openSettings = useAppStore((state) => state.openSettings);
   const isDirty = useAppStore((state) => state.isDirty);
   const leftDockOpen = useAppStore((state) => state.leftDockOpen);
@@ -74,18 +73,6 @@ export function TopActions() {
 
   return (
     <div className="top-actions">
-      <button
-        type="button"
-        className="icon-btn icon-btn--sm"
-        data-testid="back-to-start"
-        title="返回启动页（未保存的修改会先确认）"
-        onClick={() => goToStart()}
-      >
-        <Icon name="logo" size={16} />
-      </button>
-
-      <span className="top-actions__divider" />
-
       <div className="top-actions__cluster">
         <button
           type="button"
