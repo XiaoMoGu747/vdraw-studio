@@ -48,6 +48,22 @@ export function groupRingBonds(doc: VDrawDocument, groupId: string): BondObject[
 }
 
 /**
+ * 环内键的朝心侧别；非 ringFrame 编组返回 null。
+ * 键级切换生成双键/芳香键时用它保持“环内线”画法，而不是按单独键对称绘制。
+ */
+export function ringBondInnerSide(doc: VDrawDocument, bond: BondObject): 1 | -1 | null {
+  if (!bond.parentId) return null;
+  const parent = getObject(doc, bond.parentId);
+  if (!parent || parent.type !== 'group' || !parent.ringFrame) return null;
+  const geometry = ringGeometryFrom(groupBondList(doc, parent.id));
+  const center = geometry?.center ?? {
+    x: parent.x + parent.width / 2,
+    y: parent.y + parent.height / 2
+  };
+  return ringInnerSide(bond.start, bond.end, center);
+}
+
+/**
  * 由环内键本身推导苯环几何，供渲染、命中与导出共用。
  * 内圈圆使用骨架顶点而不是编组包围盒，挂上取代基后不会错位。
  */

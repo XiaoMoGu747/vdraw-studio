@@ -103,7 +103,7 @@ import { CanvasGuides } from './CanvasGuides';
 import { ToolModeBar } from './ToolModeBar';
 import { RING_TEMPLATES } from '../../core/chemistry/rings';
 import { ringGeometry } from '../../core/chemistry/ring-geometry';
-import { benzeneBondTypes, CHEM_GROUP_STYLE, isBenzeneGroup } from '../../core/chemistry/benzene';
+import { benzeneBondTypes, CHEM_GROUP_STYLE, isBenzeneGroup, ringBondInnerSide } from '../../core/chemistry/benzene';
 import { pathData } from '../../core/io/svg';
 import type {
   AtomLabelData,
@@ -212,6 +212,26 @@ function chemAnchorScale(anchor: BondAnchor | null): number {
   return anchor
     ? bondAnchorScale(anchor, useAppStore.getState().chemAtomSize)
     : 1;
+}
+
+/**
+ * 键级切换时保持环内键的朝向：
+ * - 环内双键写入 ringInnerSide，继续按“外线 + 朝心内线”绘制；
+ * - 环内芳香键写入 aromaticSide；
+ * - 单独键清空这两个字段，按对称等长线绘制。
+ */
+function bondWithType(
+  doc: VDrawDocument,
+  bond: BondObject,
+  nextType: BondObject['bondType']
+): BondObject {
+  const ringSide = ringBondInnerSide(doc, bond);
+  return {
+    ...bond,
+    bondType: nextType,
+    aromaticSide: nextType === 'aromatic' ? (ringSide ?? bond.aromaticSide) : undefined,
+    ringInnerSide: nextType === 'double' ? (ringSide ?? undefined) : undefined
+  };
 }
 
 /** 新建原子标签：字号随所在结构一起缩放，避免缩放后的结构上贴出“小字”。 */
@@ -4424,10 +4444,9 @@ export function CanvasStage() {
           state.notify(validation.reason ?? '该键不能切换为多重键', 'warn');
           return;
         }
+        const updatedBond = bondWithType(state.doc, targetBond, nextType);
         state.updateDoc(
-          replaceObject(state.doc, targetBond.id, (obj) =>
-            obj.type === 'bond' ? { ...obj, bondType: nextType } : obj
-          ),
+          replaceObject(state.doc, targetBond.id, () => updatedBond),
           true
         );
         state.setSelection([targetBond.id]);
@@ -5243,6 +5262,11 @@ export function CanvasStage() {
     if (hit.type === 'bond') {
       const bond = getObject(state.doc, hit.id);
       if (!bond || bond.type !== 'bond') return;
+      const parent = bond.parentId ? getObject(state.doc, bond.parentId) : null;
+      if (parent && parent.type === 'group' && parent.ringStyle) {
+        state.notify('环内键的键级由环样式统一控制', 'info');
+        return;
+      }
       // 双击键循环键型：单 → 双 → 三 → 芳香 → 单；跳过价层不允许的档位。
       const order = ['single', 'double', 'triple', 'aromatic'] as const;
       const found = order.indexOf(bond.bondType as (typeof order)[number]);
@@ -5265,10 +5289,9 @@ export function CanvasStage() {
         return;
       }
       state.setSelection([bond.id]);
+      const updatedBond = bondWithType(state.doc, bond, nextType);
       state.updateDoc(
-        replaceObject(state.doc, bond.id, (obj) =>
-          obj.type === 'bond' ? { ...obj, bondType: nextType } : obj
-        ),
+        replaceObject(state.doc, bond.id, () => updatedBond),
         true
       );
       state.notify(`键型已切换为 ${BOND_TYPE_LABEL[nextType] ?? nextType}`, 'success');

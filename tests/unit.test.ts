@@ -41,6 +41,7 @@ import { ATOM_PRESETS } from '../src/core/chemistry/presets';
 import { maxValenceFor } from '../src/core/chemistry/electronic';
 import { hydroxylAtomAt, planHydroxylSalt } from '../src/core/chemistry/salts';
 import { atomRadius } from '../src/core/chemistry/labels';
+import { ringBondInnerSide } from '../src/core/chemistry/benzene';
 import {
   ImportError,
   detectImportFormat,
@@ -2130,4 +2131,35 @@ test('元素库：钠/钙可选，金属价态按阳离子计', () => {
   assert.equal(maxValenceFor('Ca', 0), 2);
   assert.equal(maxValenceFor('Ca', 2), 0);
   assert.equal(maxValenceFor('Mg', 2), 0);
+});
+
+test('环内键级切换：只有 ringFrame 编组内的键才带朝心侧别', () => {
+  const doc = createDocument('blank-landscape', '环内键');
+  const layer = doc.layers[0];
+  const ringGroup = {
+    ...createGroupObject(layer.id, '环', { x: 0, y: 0, width: 160, height: 160 }, []),
+    ringFrame: true
+  };
+  const ringBond = {
+    ...createBondObject(
+      layer.id,
+      DEFAULT_STYLE,
+      { x: 40, y: 40 },
+      { x: 120, y: 40 },
+      'double'
+    ),
+    parentId: ringGroup.id
+  };
+  const ringDoc = { ...doc, layers: [{ ...layer, objects: [ringGroup, ringBond] }] };
+  const side = ringBondInnerSide(ringDoc, ringBond);
+  assert.ok(side === 1 || side === -1);
+
+  const standalone = createBondObject(
+    layer.id,
+    DEFAULT_STYLE,
+    { x: 40, y: 200 },
+    { x: 120, y: 200 },
+    'double'
+  );
+  assert.equal(ringBondInnerSide(ringDoc, standalone), null);
 });
