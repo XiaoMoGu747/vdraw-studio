@@ -119,26 +119,37 @@ export function findBondAnchor(doc: VDrawDocument, point: Vec, tolerance = 7): B
   let bestDistance = tolerance;
   let bestAtom: AtomObject | null = null;
 
-  for (const obj of allObjects(doc)) {
-    if (!interactiveObject(doc, obj)) continue;
-    if (obj.type === 'atom') {
-      const d = distance(obj.position, point);
-      if (d <= bestDistance) {
-        bestDistance = d;
-        bestPoint = obj.position;
-        bestAtom = obj;
-      }
-    } else if (obj.type === 'bond') {
+  // 两段式扫描：原子（P1）优先于键端点（P2）。
+  // 过去两者共用一条 bestDistance 竞争，等价距离时命中结果取决于对象遍历顺序；
+  // 这里先找原子，只有半径内没有原子才退化到端点，结果由化学语义而非顺序决定。
+  const objects = allObjects(doc).filter((obj) => interactiveObject(doc, obj));
+  for (const obj of objects) {
+    if (obj.type !== 'atom') continue;
+    const d = distance(obj.position, point);
+    if (d <= bestDistance) {
+      bestDistance = d;
+      bestPoint = obj.position;
+      bestAtom = obj;
+    }
+  }
+
+  if (!bestPoint) {
+    let endpointPoint: Vec | null = null;
+    let endpointDistance = tolerance;
+    for (const obj of objects) {
+      if (obj.type !== 'bond') continue;
       for (const endpoint of [obj.start, obj.end]) {
         const d = distance(endpoint, point);
-        if (d <= bestDistance) {
-          bestDistance = d;
-          bestPoint = endpoint;
-          bestAtom = null;
+        if (d < endpointDistance) {
+          endpointDistance = d;
+          endpointPoint = endpoint;
         }
       }
     }
+    bestPoint = endpointPoint;
+    bestAtom = null;
   }
+
   if (!bestPoint) return null;
 
   const origin = bestPoint;

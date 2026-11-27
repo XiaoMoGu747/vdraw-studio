@@ -9,6 +9,10 @@ import {
   prevBondOrderType
 } from '../src/core/chemistry/chain';
 import { cleanupStructure } from '../src/core/chemistry/cleanup';
+import { buildChemGraph } from '../src/core/chemistry/graph';
+import { angleTemplatesFor, snapRadius, snapVector } from '../src/core/chemistry/snap-solver';
+import { canonicalSupId, supEntryOf, supIsAttachable } from '../src/core/chemistry/sup-library';
+import { deriveHydrogens, normalizeHydrogens } from '../src/core/chemistry/valence-engine';
 import { chemistryPreviewIds } from '../src/core/chemistry/preview';
 import { createDocument, DEFAULT_STYLE } from '../src/core/document';
 import { eraseMaskDef, strokeEraseMaskDef } from '../src/core/eraseMask';
@@ -1997,4 +2001,97 @@ test('化学参数：自定义键距进入渲染，缩放后的结构可推导�
   // SVG 导出必须使用原子实际字号，而不是写死默认字号。
   const atomSvg = documentToSvgString(atomOnlyDoc, { includeBackground: false });
   assert.match(atomSvg, /font-size="32"/);
+});
+
+test('价态：氢数按允许价态首次适配，而不是取最大值', () => {
+  // C=4 / N=3 / O=2 / F=1：单值时唯一解
+  assert.equal(deriveHydrogens('C', 0, 1)?.hydrogens, 3);
+  assert.equal(deriveHydrogens('N', 0, 1)?.hydrogens, 2);
+  assert.equal(deriveHydrogens('O', 0, 1)?.hydrogens, 1);
+  assert.equal(deriveHydrogens('F', 0, 1)?.hydrogens, 0);
+  // 多价元素：S 的允许价态是 2,4,6，键级 2 时先适配 2（H=0）而不是 6（H=4）
+  assert.equal(deriveHydrogens('S', 0, 2)?.hydrogens, 0);
+  assert.equal(deriveHydrogens('S', 0, 3)?.hydrogens, 1);
+  // 超过全部允许价态 → 0 且标记超价
+  const superValent = deriveHydrogens('C', 0, 5);
+  assert.equal(superValent?.hydrogens, 0);
+  assert.equal(superValent?.superValent, true);
+});
+
+test('价态：换元素后已标注氢随新价态重算，null 保持不变', () => {
+  const doc = createDocument('blank-landscape', 'unit');
+  const layer = doc.layers[0];
+  const carbon = createAtomObject(layer.id, DEFAULT_STYLE, { x: 0, y: 0 }, {
+    ...emptyAtomLabel('C'),
+    hydrogens: null
+  });
+  const oxygen = createAtomObject(layer.id, DEFAULT_STYLE, { x: 40, y: 0 }, {
+    ...emptyAtomLabel('O'),
+    hydrogens: 1
+  });
+  const bond = createBondObject(
+    layer.id,
+    DEFAULT_STYLE,
+    { x: 0, y: 0 },
+    { x: 40, y: 0 },
+    'single'
+  );
+  bond.atomA = carbon.id;
+  bond.atomB = oxygen.id;
+  layer.objects.push(carbon, oxygen, bond);
+
+  const graph = buildChemGraph(doc);
+  assert.equal(graph.bondSumOf(oxygen.id), 1);
+
+  // 把 O–C 升级为双键：O 的键级和变 2，剩余氢应为 0
+  const upgraded = {
+    ...doc,
+    layers: doc.layers.map((item) => ({
+      ...item,
+      objects: item.objects.map((obj) =>
+        obj.id === bond.id && obj.type === 'bond' ? { ...obj, bondType: 'double' as const } : obj
+      )
+    }))
+  };
+  const normalized = normalizeHydrogens(upgraded);
+  const nextO = normalized.doc.layers[0].objects.find((obj) => obj.id === oxygen.id);
+  assert.ok(nextO && nextO.type === 'atom');
+  assert.equal(nextO.label.hydrogens, 0);
+  // 未标注氢的碳保持 null，不会被补成 CH₄
+  const nextC = normalized.doc.layers[0].objects.find((obj) => obj.id === carbon.id);
+  assert.ok(nextC && nextC.type === 'atom');
+  assert.equal(nextC.label.hydrogens, null);
+});
+
+test('吸附：半径 = 键长 × 0.19，并按屏幕像素钳制', () => {
+  assert.ok(Math.abs(snapRadius(40, 1) - 7.6) < 0.001);
+  assert.ok(Math.abs(snapRadius(40, 2) - 3.8) < 0.001);
+  // 键长极小时取 4px 下限，极大时取 14px 上限
+  assert.ok(Math.abs(snapRadius(8, 1) - 4) < 0.001);
+  assert.ok(Math.abs(snapRadius(400, 1) - 14) < 0.001);
+});
+
+test('角度：模板角不含 15°，只吸附到 30/45/60/90/120 体系', () => {
+  assert.equal(angleTemplatesFor().includes(15), false);
+  assert.ok(angleTemplatesFor().includes(60));
+  assert.ok(angleTemplatesFor().includes(120));
+  assert.ok(angleTemplatesFor('sp3').includes(109.47));
+
+  // 62° 吸附到 60°，70° 偏离超过 6° 容差保持原样
+  const near = snapVector({ x: Math.cos((62 * Math.PI) / 180), y: Math.sin((62 * Math.PI) / 180) }, angleTemplatesFor());
+  assert.equal(near.snapped, true);
+  assert.equal(near.angle, 60);
+  const far = snapVector({ x: Math.cos((70 * Math.PI) / 180), y: Math.sin((70 * Math.PI) / 180) }, angleTemplatesFor());
+  assert.equal(far.snapped, false);
+});
+
+test('官能团：只有含锚点的 SUP 才可挂键，旧文本可规范化', () => {
+  assert.equal(supIsAttachable('COOH'), true);
+  assert.equal(supIsAttachable('Boc'), true);
+  assert.equal(supIsAttachable('unknown-group'), false);
+  assert.equal(supEntryOf('OH')?.anchor, 'single');
+  // 旧文件里的纯文本基团（含下标）可映射回 SUP id
+  assert.equal(canonicalSupId('OH'), 'OH');
+  assert.equal(canonicalSupId('NH₂'), 'NH2');
+  assert.equal(canonicalSupId('自定义基团'), 'legacy:自定义基团');
 });

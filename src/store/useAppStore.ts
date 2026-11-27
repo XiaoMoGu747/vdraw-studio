@@ -88,6 +88,7 @@ function nextLayerName(layers: Layer[]): string {
   return `图层 ${max + 1}`;
 }
 import type { ChemIssue } from '../core/chemistry/valence';
+import { normalizeHydrogens } from '../core/chemistry/valence-engine';
 
 export type LayerDropPosition = 'before' | 'after' | 'inside';
 
@@ -2042,6 +2043,13 @@ export const useAppStore = create<AppState>((set, get) => {
       }
 
       if (resolved === doc) return;
+
+      // 价态自洽：所有"已标注氢"的原子在每次结构变更后重算氢数。
+      // 只改已经写了数值氢的原子（不把 null 的骨架原子补成 CH₄），
+      // 显式固定的氢（explicitH）与 SUP 官能团不参与，避免视觉与语义回归。
+      const normalized = normalizeHydrogens(resolved);
+      if (normalized.changed > 0) resolved = normalized.doc;
+
       if (record && !pendingSnapshot) {
         set({
           doc: resolved,

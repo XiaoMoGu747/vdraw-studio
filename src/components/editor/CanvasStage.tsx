@@ -72,7 +72,6 @@ import {
   bondExistsBetween,
   bondAnchorScale,
   bondOrderForType,
-  findBondAnchor,
   findBondAt,
   maxNewBondOrderForAnchor,
   nearestRingAnchor,
@@ -81,6 +80,13 @@ import {
   validateBondUpgrade,
   type BondAnchor
 } from '../../core/chemistry/chain';
+import {
+  resetSnapHysteresis,
+  resolveSnapAnchor
+} from '../../core/chemistry/snap-solver';
+import { canonicalSupId, supEntryOf } from '../../core/chemistry/sup-library';
+import { buildChemGraph } from '../../core/chemistry/graph';
+import { deriveHydrogens } from '../../core/chemistry/valence-engine';
 import { eraseAlongPath, findErasableAt, type EraserTargets } from '../../core/eraser';
 import { validateStructure, type ChemIssue } from '../../core/chemistry/valence';
 import { buildRegionFill } from '../../core/regionRaster';
@@ -775,6 +781,21 @@ function curveHandleIndex(path: PathObject, point: Vec, zoom: number): number {
   );
 }
 
+/**
+ * 统一落点解算：所有化学吸附都走这里。
+ * 半径 = 当前键长 × 0.19（对齐 KingDraw 的 0.15/0.78），钳在 4–14 屏幕像素后按缩放换算。
+ * key 非 'idle' 时启用迟滞，拖动期间不会在两个候选之间来回跳。
+ */
+function snapAnchor(doc: VDrawDocument, point: Vec, key = 'idle'): BondAnchor | null {
+  const state = useAppStore.getState();
+  return resolveSnapAnchor(doc, point, {
+    bondLength: state.chemBondLength,
+    zoom: state.viewport.zoom,
+    key,
+    noHysteresis: key === 'idle'
+  });
+}
+
 /** 找到环上被点击的碳原子/环键，并计算新环贴在该顶点外侧的中心与旋转角。 */
 function ringAttachmentAt(
   doc: VDrawDocument,
@@ -782,7 +803,7 @@ function ringAttachmentAt(
   template: (typeof RING_TEMPLATES)[number],
   zoom: number
 ): { center: Vec; rotation: number; groupId: string; anchorPoint: Vec } | null {
-  let anchor = findBondAnchor(doc, point, 12 / zoom);
+  let anchor = snapAnchor(doc, point, 'ring');
   if (!anchor || !anchor.group?.ringFrame) {
     const bond = findBondAt(doc, point, 12 / zoom);
     if (bond?.parentId) {
@@ -791,7 +812,7 @@ function ringAttachmentAt(
         Math.hypot(point.x - bond.end.x, point.y - bond.end.y)
           ? bond.start
           : bond.end;
-      anchor = findBondAnchor(doc, endpoint, 2 / zoom) ?? anchor;
+      anchor = snapAnchor(doc, endpoint, 'ring') ?? anchor;
     }
   }
   if (!anchor || !anchor.group?.ringFrame) return null;
@@ -1278,7 +1299,9 @@ function atomLabelFromChem(chem: ReturnType<typeof useAppStore.getState>['chem']
     radical: chem.radical,
     lonePairs: chem.lonePairs,
     hydrogens: null,
-    group: preset?.kind === 'group' ? preset.display : null
+    group: preset?.kind === 'group' ? preset.display : null,
+    // 官能团同时记录 SUP 条目 id：折叠态仍显示 group 文本，展开/统计走 supId。
+    supId: preset?.kind === 'group' ? canonicalSupId(preset.id) : null
   };
 }
 
@@ -1844,6 +1867,8 @@ export function CanvasStage() {
     extra: Partial<DragState> = {}
   ) {
     const state = useAppStore.getState();
+    // 新一次拖动开始：清掉上一次的吸附迟滞，避免旧候选把落点“粘”住。
+    resetSnapHysteresis();
     dragRef.current = {
       mode,
       startPage: start,
@@ -2317,11 +2342,14 @@ export function CanvasStage() {
       ATOM_PRESETS.find((item) => item.id === state.chem.atomPresetId) ?? ATOM_PRESETS[0];
     const label = atomLabelFromChem(state.chem);
     // 吸附到最近的原子或键端点，保证标签与化学键严格对齐
-    const anchor = findBondAnchor(state.doc, point, 12 / zoom);
+    const anchor = snapAnchor(state.doc, point);
     const anchorScale = chemAnchorScale(anchor);
 
-    // 官能团（OH / NH₂ / COOH…）与氢原子作为取代基挂接，绝不替换环骨架原子
-    if ((preset.kind === 'group' || preset.element === 'H') && anchor) {
+    // 官能团（OH / NH₂ / COOH…）与氢原子作为取代基挂接，绝不替换环骨架原子。
+    // SUP 里 smiles 不含 `*` 的整分子不可挂键（对齐 KingDraw 的 isRHave=0），只能独立放置。
+    const supInfo = preset.kind === 'group' ? supEntryOf(preset.id) : null;
+    const attachable = preset.element === 'H' || !supInfo || Boolean(supInfo.anchor);
+    if ((preset.kind === 'group' || preset.element === 'H') && anchor && attachable) {
       if (anchor.atom && anchor.atom.label.group === preset.display) {
         state.notify('该原子已连接相同基团', 'info');
         return;
@@ -2378,8 +2406,20 @@ export function CanvasStage() {
     const target = anchor ? anchor.point : gridPoint(point, state.doc, state.snapEnabled, false);
     const existing = findAtomAt(state.doc, target, 6);
     if (existing) {
-      // 重贴标签只改"元素/基团"身份；电荷/同位素/孤对/氢数属于用户已录入的化学语义，
-      // 必须保留，否则换一次元素就会把 O⁻、¹³C 之类的标注静默清零。
+      // 重贴标签只改"元素/基团"身份；电荷/同位素/孤对属于用户已录入的化学语义，必须保留。
+      // 氢数则必须跟着新元素走：旧实现原样保留，O→N 会留下 OH 的 1 个氢。
+      // 约定：null = 未标注氢（继续不显示）；数值 = 按新元素价态首次适配重算。
+      const bondSum = buildChemGraph(state.doc).bondSumOf(existing.id);
+      const derived =
+        existing.explicitH != null
+          ? null
+          : deriveHydrogens(label.element, label.charge, bondSum);
+      const nextHydrogens =
+        existing.explicitH != null
+          ? existing.label.hydrogens
+          : existing.label.hydrogens === null
+            ? null
+            : derived?.hydrogens ?? existing.label.hydrogens;
       state.updateDoc(
         replaceObject(state.doc, existing.id, (obj) =>
           obj.type === 'atom'
@@ -2391,7 +2431,7 @@ export function CanvasStage() {
                   isotope: existing.label.isotope,
                   radical: existing.label.radical,
                   lonePairs: existing.label.lonePairs,
-                  hydrogens: existing.label.hydrogens,
+                  hydrogens: nextHydrogens,
                   fontSize: existing.label.fontSize
                 }
               }
@@ -3059,7 +3099,7 @@ export function CanvasStage() {
       const tolerance = 11 / currentZoom;
       const startAnchor =
         drag.mode === 'bond'
-          ? findBondAnchor(state.doc, drag.origin, 10 / currentZoom)
+          ? snapAnchor(state.doc, drag.origin, 'drag')
           : null;
       const startScale = chemAnchorScale(startAnchor);
       const baseLength = state.chemBondLength * startScale;
@@ -3832,7 +3872,7 @@ export function CanvasStage() {
     if (!drag) {
       // 所有化学工具共用同一套悬停反馈：原子圈选 / 化学键描边。
       if (hoverHighlight && CHEM_HOVER_TOOLS.includes(activeTool)) {
-        const anchor = findBondAnchor(state.doc, point, 11 / state.viewport.zoom);
+        const anchor = snapAnchor(state.doc, point, 'hover');
         if (anchor) {
           setBondHover({ kind: 'atom', point: anchor.point });
         } else {
@@ -4091,7 +4131,7 @@ export function CanvasStage() {
     if (!layer || layer.locked) return true;
     const zoom = state.viewport.zoom;
     const targetAnchor =
-      findBondAnchor(state.doc, targetPoint, 10 / zoom) ??
+      snapAnchor(state.doc, targetPoint) ??
       nearestRingAnchor(state.doc, targetPoint);
     const directTarget =
       targetAnchor &&
@@ -4107,10 +4147,21 @@ export function CanvasStage() {
     const requestedType = state.chem.bondType;
     const requestedOrder = bondOrderForType(requestedType);
     const anchorScale = chemAnchorScale(anchor);
+    // 绘制期补全：键级同时受两端价层容量约束，而不是只看向哪一端起笔。
+    // 目标端装不下时降级（并给出原因），避免画出超价结构。
+    const targetCapacity = directTarget
+      ? maxNewBondOrderForAnchor(directTarget)
+      : requestedOrder;
     const plannedOrder = Math.max(
       1,
-      Math.min(requestedOrder, maxNewBondOrderForAnchor(anchor))
+      Math.min(requestedOrder, maxNewBondOrderForAnchor(anchor), targetCapacity)
     );
+    if (plannedOrder < requestedOrder) {
+      state.notify(
+        `按两端价层容量，键型已降级为${plannedOrder >= 3 ? '三键' : plannedOrder >= 2 ? '双键' : '单键'}`,
+        'info'
+      );
+    }
 
     if (directTarget) {
       endPoint = directTarget.point;
@@ -4190,7 +4241,7 @@ export function CanvasStage() {
       }
       const connection = findConnection(state.doc, endPoint, 7);
       if (connection) {
-        const connectionAnchor = findBondAnchor(state.doc, connection, 3);
+        const connectionAnchor = snapAnchor(state.doc, connection, 'drag');
         if (
           connectionAnchor &&
           Math.hypot(
@@ -4262,17 +4313,13 @@ export function CanvasStage() {
     // 拖拽成键必须与单击成键共用同一套目标吸附/价层/编组逻辑。
     // 之前只有单击分支做这些校验，拖拽会绕过它们生成超价、重复或环内键。
     if (!clicked && drag.mode === 'bond') {
-      const originAnchor = findBondAnchor(
-        state.doc,
-        drag.origin,
-        10 / state.viewport.zoom
-      );
+      const originAnchor = snapAnchor(state.doc, drag.origin, 'drag');
       if (originAnchor) {
         createBondFromAnchor(originAnchor, point);
         return;
       }
       const targetAnchor =
-        findBondAnchor(state.doc, point, 10 / state.viewport.zoom) ??
+        snapAnchor(state.doc, point, 'drag') ??
         nearestRingAnchor(state.doc, point);
       if (targetAnchor) {
         createBondFromAnchor(targetAnchor, drag.origin);
@@ -4316,9 +4363,9 @@ export function CanvasStage() {
 
       // 2) 点在原子/键端点上：按杂化与剩余化合价计算规范几何后延伸
       const originAnchor =
-        findBondAnchor(state.doc, drag.origin, 10 / state.viewport.zoom) ?? null;
+        snapAnchor(state.doc, drag.origin, 'drag') ?? null;
       const targetAnchor =
-        findBondAnchor(state.doc, point, 10 / state.viewport.zoom) ??
+        snapAnchor(state.doc, point, 'drag') ??
         nearestRingAnchor(state.doc, point);
       const anchor = originAnchor ?? targetAnchor;
       if (anchor) {
@@ -4397,10 +4444,12 @@ export function CanvasStage() {
           state.notify('该位置已存在化学键', 'warn');
           return;
         }
-        const snapAnchor = targetConnection ? findBondAnchor(state.doc, target, 3) : null;
+        const targetConnAnchor = targetConnection
+          ? snapAnchor(state.doc, target, 'drag')
+          : null;
         // 由两端原子的价层 σ/π 容量推导可用的最高键级，而不是按工具/环类型写死
         const limits = [maxNewBondOrderForAnchor(anchor)];
-        if (snapAnchor) limits.push(maxNewBondOrderForAnchor(snapAnchor));
+        if (targetConnAnchor) limits.push(maxNewBondOrderForAnchor(targetConnAnchor));
         const maxOrder = Math.min(...limits);
         if (maxOrder < 1) {
           state.notify(`${anchor.element} 原子价层已无空余容量，无法继续成键`, 'warn');
@@ -4447,7 +4496,7 @@ export function CanvasStage() {
     }
 
     const connection = findConnection(state.doc, point, tolerance);
-    const startAnchor = findBondAnchor(state.doc, drag.origin, 6);
+    const startAnchor = snapAnchor(state.doc, drag.origin, 'drag');
     const startScale = drag.mode === 'bond' ? chemAnchorScale(startAnchor) : 1;
     const baseBondLength = state.chemBondLength * startScale;
     let end = connection ?? point;
@@ -4494,7 +4543,7 @@ export function CanvasStage() {
     }
     if (drag.mode === 'bond') {
       if (connection && Math.hypot(end.x - drag.origin.x, end.y - drag.origin.y) < 6) return;
-      const endAnchor = connection ? findBondAnchor(state.doc, connection, 3) : null;
+      const endAnchor = connection ? snapAnchor(state.doc, connection, 'drag') : null;
       const bondType = state.chem.bondType;
       const order = bondOrderForType(bondType);
       if (startAnchor && startAnchor.free < order) {
