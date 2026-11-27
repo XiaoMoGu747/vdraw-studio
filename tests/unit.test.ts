@@ -40,7 +40,7 @@ import { buildBondGeometry } from '../src/core/chemistry/bonds';
 import { ATOM_PRESETS } from '../src/core/chemistry/presets';
 import { maxValenceFor } from '../src/core/chemistry/electronic';
 import { acidicGroupAtomAt, planAcidicSalt } from '../src/core/chemistry/salts';
-import { ATOM_LABEL_GAP, atomLabelLayout } from '../src/core/chemistry/labels';
+import { ATOM_LABEL_GAP, atomLabelLayout, atomParts, flipGroupText } from '../src/core/chemistry/labels';
 import { ringBondInnerSide } from '../src/core/chemistry/benzene';
 import {
   ImportError,
@@ -2093,7 +2093,7 @@ test('成盐：Na/Ca 替换羟基氢，阳离子沿原 H 方向对齐', () => {
     fontSize: 20
   });
 
-  const sodium = planAcidicSalt(oxygen, 'Na', { x: 0, y: 100 }, 40);
+  const sodium = planAcidicSalt(oxygen, 'Na', { x: 0, y: 100 }, 40, 'axial', 80);
   assert.ok(sodium);
   if (!sodium) return;
   assert.equal(sodium.acidLabel.element, 'O');
@@ -2108,7 +2108,7 @@ test('成盐：Na/Ca 替换羟基氢，阳离子沿原 H 方向对齐', () => {
     '阳离子与 O 至少相隔一个键长'
   );
 
-  const calcium = planAcidicSalt(oxygen, 'Ca', { x: 0, y: 100 }, 40);
+  const calcium = planAcidicSalt(oxygen, 'Ca', { x: 0, y: 100 }, 40, 'axial', 80);
   assert.ok(calcium);
   if (!calcium) return;
   assert.equal(calcium.cation.charge, 2);
@@ -2217,17 +2217,20 @@ test('成盐摆位：右侧模式让金属与 O 水平对齐', () => {
     group: 'OH',
     fontSize: 20
   });
-  const axial = planAcidicSalt(oxygen, 'Na', { x: 0, y: 100 }, 40, 'axial');
+  const axial = planAcidicSalt(oxygen, 'Na', { x: 0, y: 100 }, 40, 'axial', 80);
   assert.ok(axial);
   if (!axial) return;
   assert.ok(Math.abs(axial.cation.position.x) < 0.001);
   assert.ok(axial.cation.position.y < 0);
 
-  const right = planAcidicSalt(oxygen, 'Na', { x: 0, y: 100 }, 40, 'right');
+  const right = planAcidicSalt(oxygen, 'Na', { x: 0, y: 100 }, 40, 'right', 80);
   assert.ok(right);
   if (!right) return;
-  assert.ok(right.cation.position.x > 0, '右侧模式应在 O 的右边');
-  assert.ok(Math.abs(right.cation.position.y) < 0.001, '右侧模式应与 O 水平对齐');
+  assert.ok(right.cation.position.x > right.attach.x, '右侧模式应在 O 的右边');
+  assert.ok(
+    Math.abs(right.cation.position.y - right.attach.y) < 0.001,
+    '右侧模式应与 O 字形中心水平对齐'
+  );
 });
 
 test('成盐摆位：左侧羟基自动把侧向金属放到左边', () => {
@@ -2239,14 +2242,14 @@ test('成盐摆位：左侧羟基自动把侧向金属放到左边', () => {
     fontSize: 20
   });
   // 邻居在右侧 = 羟基在苯环左侧。
-  const left = planAcidicSalt(oxygen, 'Na', { x: 100, y: 0 }, 40, 'right');
+  const left = planAcidicSalt(oxygen, 'Na', { x: 100, y: 0 }, 40, 'right', 80);
   assert.ok(left);
   if (!left) return;
   assert.ok(left.cation.position.x < 0, '左侧羟基的金属应放在左边');
   assert.ok(Math.abs(left.cation.position.y) < 0.001);
 
   // 邻居在下方 = 羟基在上侧，金属仍在右边。
-  const top = planAcidicSalt(oxygen, 'Na', { x: 0, y: 100 }, 40, 'right');
+  const top = planAcidicSalt(oxygen, 'Na', { x: 0, y: 100 }, 40, 'right', 80);
   assert.ok(top);
   if (!top) return;
   assert.ok(top.cation.position.x > 0);
@@ -2264,8 +2267,8 @@ test('成盐距离：可手动放大金属与酸根的最小距离', () => {
   assert.ok(plan);
   if (!plan) return;
   const distance = Math.hypot(
-    plan.cation.position.x - oxygen.position.x,
-    plan.cation.position.y - oxygen.position.y
+    plan.cation.position.x - plan.attach.x,
+    plan.cation.position.y - plan.attach.y
   );
   assert.ok(Math.abs(distance - 140) < 0.01, `实际距离 ${distance}`);
 });
@@ -2324,4 +2327,42 @@ test('官能团键长：宽标签端基按固定间隙裁键，不再被压得�
     visible > 90,
     `COOH 端基键可见长度 ${visible.toFixed(2)}，不应被标签宽度压短`
   );
+});
+
+test('成盐距离为 0：Na 与连接 O 的字形中心重叠', () => {
+  const doc = createDocument('blank-landscape', '重叠成盐');
+  const layer = doc.layers[0];
+  const oxygen = createAtomObject(layer.id, DEFAULT_STYLE, { x: 0, y: 0 }, {
+    ...emptyAtomLabel('O'),
+    group: 'OH',
+    fontSize: 20
+  });
+  const plan = planAcidicSalt(oxygen, 'Na', { x: 0, y: 100 }, 40, 'right', 0);
+  assert.ok(plan);
+  if (!plan) return;
+  assert.equal(plan.cation.position.x, plan.attach.x);
+  assert.equal(plan.cation.position.y, plan.attach.y);
+});
+
+test('KingDraw 式标签锚点：左置官能团翻转且连接原子贴近键', () => {
+  assert.equal(flipGroupText('COOH'), 'HOOC');
+  assert.equal(flipGroupText('OH'), 'HO');
+  assert.equal(flipGroupText('SO₃H'), 'HO₃S');
+
+  const doc = createDocument('blank-landscape', '标签锚点');
+  const layer = doc.layers[0];
+  const carboxyl = createAtomObject(layer.id, DEFAULT_STYLE, { x: 0, y: 0 }, {
+    ...emptyAtomLabel('C'),
+    group: 'COOH',
+    fontSize: 20
+  });
+  const layout = atomLabelLayout(carboxyl, [
+    {
+      ...createBondObject(layer.id, DEFAULT_STYLE, { x: 100, y: 0 }, { x: 0, y: 0 }, 'single')
+    }
+  ]);
+  assert.equal(layout.flip, true);
+  assert.ok(layout.dx < 0, '左置标签应整体位于键的左侧');
+  assert.equal(atomParts(carboxyl, false, layout.flip).main, 'HOOC');
+  assert.ok(layout.attach.x < 0, '连接原子 C 应在原子位置左侧靠近键');
 });

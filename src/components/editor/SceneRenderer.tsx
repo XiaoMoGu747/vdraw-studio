@@ -590,13 +590,13 @@ function AtomView({
   implicitHydrogens: boolean;
 }) {
   const hideCharges = useAppStore((state) => state.chemHideCharges);
-  const parts = atomParts(object, implicitHydrogens);
   const layout = useMemo(() => {
     const bonds = doc.layers
       .flatMap((layer) => layer.objects)
       .filter((item): item is BondObject => item.type === 'bond');
     return atomLabelLayout(object, bonds);
   }, [object, doc]);
+  const parts = atomParts(object, implicitHydrogens, layout.flip);
   const fontSize = parts.fontSize;
   const scale = fontSize / ATOM_FONT_SIZE;
   const chargeOnLeft = layout.dx < -1;

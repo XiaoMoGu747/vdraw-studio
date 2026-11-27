@@ -306,8 +306,8 @@ export const CHEM_BOND_WIDTH_DEFAULT = 2.2;
 export const CHEM_BOND_SPACING_DEFAULT = 4.2;
 /** 环上双键内线默认键距；与单独双键/三键分开控制。 */
 export const CHEM_RING_BOND_SPACING_DEFAULT = 4.2;
-/** 成盐金属与酸根的默认距离：0 = 按键长与标签宽度自动计算。 */
-export const CHEM_SALT_DISTANCE_DEFAULT = 0;
+/** 成盐金属与酸根的默认距离；0 表示与 O 完全重叠。 */
+export const CHEM_SALT_DISTANCE_DEFAULT = 80;
 export const CHEM_SALT_DISTANCE_RANGE = { min: 0, max: 600 } as const;
 export const CHEM_ATOM_SIZE_DEFAULT = 16;
 /** 兼容旧命名：推荐值即默认值。 */
@@ -478,7 +478,7 @@ interface AppState {
   chemRingBondSpacing: number;
   /** 成盐时金属阳离子的摆放方式。 */
   chemCationPlacement: CationPlacement;
-  /** 成盐金属与酸根的最小距离；0 = 自动。 */
+  /** 成盐金属中心到连接原子的距离；0 = 重叠。 */
   chemSaltDistance: number;
   /** 是否隐藏原子标签上的电荷上标。 */
   chemHideCharges: boolean;
@@ -671,7 +671,7 @@ interface AppState {
   setChemRingBondSpacing: (spacing: number) => void;
   /** 设置成盐金属阳离子的摆放方式。 */
   setChemCationPlacement: (placement: CationPlacement) => void;
-  /** 设置成盐金属与酸根的最小距离；0 = 自动。 */
+  /** 设置成盐金属中心到连接原子的距离；0 = 重叠。 */
   setChemSaltDistance: (distance: number) => void;
   /** 显示/隐藏原子标签上的正负电荷。 */
   setChemHideCharges: (hide: boolean) => void;

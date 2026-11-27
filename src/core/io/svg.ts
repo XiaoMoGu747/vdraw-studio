@@ -168,7 +168,7 @@ function atomToSvg(
   hideCharges = false,
   layout?: AtomLabelLayout
 ): string {
-  const parts = atomParts(obj, implicitHydrogens);
+  const parts = atomParts(obj, implicitHydrogens, layout?.flip === true);
   const scale = parts.fontSize / ATOM_FONT_SIZE;
   const dx = layout?.dx ?? 0;
   const dy = layout?.dy ?? 0;

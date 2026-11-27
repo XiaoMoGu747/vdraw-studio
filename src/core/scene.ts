@@ -169,13 +169,13 @@ function computeObjectBounds(obj: SceneObject, doc?: VDrawDocument): Rect {
     }
     case 'atom': {
       // 标签宽度随元素/基团变化，不能用固定 40×32，否则选择框、对齐和适应窗口都会失真。
-      const parts = atomParts(obj);
       const bonds: BondObject[] = doc
         ? doc.layers
             .flatMap((layer) => layer.objects)
             .filter((item): item is BondObject => item.type === 'bond')
         : [];
       const layout = atomLabelLayout(obj, bonds);
+      const parts = atomParts(obj, false, layout.flip);
       const centerX = obj.position.x + layout.dx;
       const centerY = obj.position.y + layout.dy;
       const chargePad = obj.label.charge ? parts.fontSize * 0.34 : 0;
@@ -1191,8 +1191,8 @@ export function findAtomAt(
     if (!layer.visible) continue;
     for (const obj of layer.objects) {
       if (obj.type !== 'atom') continue;
-      const parts = atomParts(obj);
       const layout = atomLabelLayout(obj, bonds);
+      const parts = atomParts(obj, false, layout.flip);
       const centerX = obj.position.x + layout.dx;
       const centerY = obj.position.y + layout.dy;
       const chargePad = obj.label.charge ? parts.fontSize * 0.34 : 0;

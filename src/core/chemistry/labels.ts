@@ -62,10 +62,50 @@ export function atomMainText(label: AtomLabelData, implicitHydrogens = false): s
   return label.element;
 }
 
-export function atomParts(atom: AtomObject, implicitHydrogens = false): AtomLabelParts {
+function groupTokens(text: string): string[] {
+  const tokens: string[] = [];
+  for (const char of text) {
+    if (/[A-Z]/.test(char) || tokens.length === 0) {
+      tokens.push(char);
+    } else {
+      tokens[tokens.length - 1] += char;
+    }
+  }
+  return tokens;
+}
+
+/** 与 KingDraw 一致：左侧取代基把标签按原子顺序掉转，使连接原子靠近键。 */
+export function flipGroupText(text: string): string {
+  return groupTokens(text).reverse().join('');
+}
+
+/** 真正与键相连的原子对应 token；左置标签掉转后连接原子在末尾。 */
+function attachmentToken(text: string, flip: boolean): string {
+  const tokens = groupTokens(text);
+  if (tokens.length === 0) return text;
+  return flip ? tokens[tokens.length - 1] : tokens[0];
+}
+
+export function measureLabelWidth(text: string, fontSize: number): number {
+  let width = 0;
+  for (const char of text) {
+    if (/[\u4e00-\u9fa5]/.test(char)) width += fontSize;
+    else if (/[₀-₉]/.test(char)) width += fontSize * 0.36;
+    else if (/[A-Z]/.test(char)) width += fontSize * 0.66;
+    else width += fontSize * 0.5;
+  }
+  return Math.max(fontSize * 0.7, width);
+}
+
+export function atomParts(
+  atom: AtomObject,
+  implicitHydrogens = false,
+  flip = false
+): AtomLabelParts {
   const label = atom.label;
   const fontSize = Math.max(8, label.fontSize ?? ATOM_FONT_SIZE);
-  const main = atomMainText(label, implicitHydrogens);
+  const base = atomMainText(label, implicitHydrogens);
+  const main = flip && label.group ? flipGroupText(base) : base;
   const chargeMagnitude = Math.abs(label.charge);
   const charge =
     label.charge === 0
@@ -73,21 +113,13 @@ export function atomParts(atom: AtomObject, implicitHydrogens = false): AtomLabe
       : `${chargeMagnitude === 1 ? '' : chargeMagnitude}${label.charge > 0 ? '+' : '−'}`;
   const radicalCount = label.radical === 'triplet' ? 2 : label.radical === 'none' ? 0 : 1;
 
-  let width = 0;
-  for (const char of main) {
-    if (/[\u4e00-\u9fa5]/.test(char)) width += fontSize;
-    else if (/[₀-₉]/.test(char)) width += fontSize * 0.36;
-    else if (/[A-Z]/.test(char)) width += fontSize * 0.66;
-    else width += fontSize * 0.5;
-  }
-
   return {
     main,
     isotope: label.isotope ? String(label.isotope) : null,
     charge,
     radicalCount,
     lonePairs: label.lonePairs,
-    width: Math.max(fontSize * 0.7, width),
+    width: measureLabelWidth(main, fontSize),
     fontSize
   };
 }
@@ -104,34 +136,73 @@ export interface AtomLabelLayout {
   clearance: number;
   /** 是否为单键端基（标签沿键轴向外展开）。 */
   terminal: boolean;
-}
-
-/** 单键端基：标签沿键轴向外移，近端只留固定间隙，避免宽官能团把键挤短。 */
-export function terminalLabelShift(
-  position: Vec,
-  neighbor: Vec,
-  width: number,
-  height: number,
-  gap = ATOM_LABEL_GAP
-): Vec {
-  const dx = position.x - neighbor.x;
-  const dy = position.y - neighbor.y;
-  const length = Math.hypot(dx, dy);
-  if (length < 0.001) return { x: 0, y: 0 };
-  const ux = dx / length;
-  const uy = dy / length;
-  // 标签是水平文字：沿键轴方向的半宽由文字宽/高在该方向上的投影决定。
-  const halfExtent = Math.abs(ux) * (width / 2) + Math.abs(uy) * (height / 2);
-  const shift = Math.max(0, halfExtent - gap);
-  return { x: ux * shift, y: uy * shift };
+  /** 左侧键上的官能团需掉转文字，使连接原子靠近键。 */
+  flip: boolean;
+  /** 真正与键相连的原子在屏幕上的位置（Na 等成盐金属以此为基准）。 */
+  attach: Vec;
 }
 
 /**
- * 原子标签布局：只有一个键的端基标签向外展开，其余标签居中。
- * 这样 COOH / SO₃H 等宽标签不会因为按整段文字宽度裁键而把键压得过短。
+ * 端基标签布局：键连到“连接原子”的字形边缘，而不是整段文字中心。
+ * 这样 COOH 的键落在 C 上、OH 的键落在 O 上，左侧则自动写成 HOOC / HO。
  */
+export function atomLabelLayoutForNeighbor(
+  atom: AtomObject,
+  neighbor: Vec | null
+): AtomLabelLayout {
+  if (!neighbor) {
+    return {
+      dx: 0,
+      dy: 0,
+      clearance: atomRadius(atom),
+      terminal: false,
+      flip: false,
+      attach: { x: atom.position.x, y: atom.position.y }
+    };
+  }
+  const flip = neighbor.x > atom.position.x + 1;
+  const parts = atomParts(atom, false, flip);
+  const baseText = atomMainText(atom.label);
+  const attachWidth = measureLabelWidth(attachmentToken(baseText, flip), parts.fontSize);
+  const attachHeight = parts.fontSize * 1.2;
+  const dx = atom.position.x - neighbor.x;
+  const dy = atom.position.y - neighbor.y;
+  const length = Math.hypot(dx, dy);
+  if (length < 0.001) {
+    return {
+      dx: 0,
+      dy: 0,
+      clearance: ATOM_LABEL_GAP,
+      terminal: true,
+      flip,
+      attach: { x: atom.position.x, y: atom.position.y }
+    };
+  }
+  const ux = dx / length;
+  const uy = dy / length;
+  const halfExtent =
+    Math.abs(ux) * (attachWidth / 2) + Math.abs(uy) * (attachHeight / 2);
+  const targetDistance = halfExtent + ATOM_LABEL_GAP;
+  const attach: Vec = {
+    x: atom.position.x + ux * targetDistance,
+    y: atom.position.y + uy * targetDistance
+  };
+  const attachOffsetX = flip
+    ? parts.width / 2 - attachWidth / 2
+    : attachWidth / 2 - parts.width / 2;
+  const centerX = attach.x - attachOffsetX;
+  return {
+    dx: centerX - atom.position.x,
+    dy: attach.y - atom.position.y,
+    clearance: ATOM_LABEL_GAP,
+    terminal: true,
+    flip,
+    attach
+  };
+}
+
+/** 原子标签布局：只有一个键的端基标签按连接原子定位，其余标签居中。 */
 export function atomLabelLayout(atom: AtomObject, bonds: BondObject[]): AtomLabelLayout {
-  const parts = atomParts(atom);
   const touching = bonds.filter((bond) => {
     const atStart =
       Math.abs(bond.start.x - atom.position.x) < 2.5 &&
@@ -141,26 +212,21 @@ export function atomLabelLayout(atom: AtomObject, bonds: BondObject[]): AtomLabe
       Math.abs(bond.end.y - atom.position.y) < 2.5;
     return atStart || atEnd;
   });
-  if (touching.length === 1) {
-    const bond = touching[0];
-    const atStart =
-      Math.abs(bond.start.x - atom.position.x) < 2.5 &&
-      Math.abs(bond.start.y - atom.position.y) < 2.5;
-    const neighbor = atStart ? bond.end : bond.start;
-    const shift = terminalLabelShift(
-      atom.position,
-      neighbor,
-      parts.width,
-      Math.max(30, parts.fontSize * 1.5)
-    );
+  if (touching.length !== 1) {
     return {
-      dx: shift.x,
-      dy: shift.y,
-      clearance: ATOM_LABEL_GAP,
-      terminal: true
+      dx: 0,
+      dy: 0,
+      clearance: atomRadius(atom),
+      terminal: false,
+      flip: false,
+      attach: { x: atom.position.x, y: atom.position.y }
     };
   }
-  return { dx: 0, dy: 0, clearance: atomRadius(atom), terminal: false };
+  const bond = touching[0];
+  const atStart =
+    Math.abs(bond.start.x - atom.position.x) < 2.5 &&
+    Math.abs(bond.start.y - atom.position.y) < 2.5;
+  return atomLabelLayoutForNeighbor(atom, atStart ? bond.end : bond.start);
 }
 
 /** 键在原子一端应让出的距离：端基标签只需固定间隙，其它按标签半径。 */

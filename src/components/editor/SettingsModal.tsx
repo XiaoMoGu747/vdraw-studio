@@ -490,8 +490,8 @@ export function SettingsModal() {
                 <span>
                   <strong>成盐离子距离</strong>
                   <em>
-                    金属到酸根的最小距离；0 = 自动。范围 {CHEM_SALT_DISTANCE_RANGE.min}–
-                    {CHEM_SALT_DISTANCE_RANGE.max}px，实际过近时会自动避让标签
+                    金属中心到 O 等连接原子的距离；0 = 与 O 重叠。范围 {CHEM_SALT_DISTANCE_RANGE.min}–
+                    {CHEM_SALT_DISTANCE_RANGE.max}px
                   </em>
                 </span>
                 <div className="settings-range">
@@ -504,7 +504,7 @@ export function SettingsModal() {
                     data-testid="settings-salt-distance"
                     onChange={(event) => setChemSaltDistance(Number(event.target.value))}
                   />
-                  <b>{chemSaltDistance === 0 ? '自动' : `${chemSaltDistance}px`}</b>
+                  <b>`${chemSaltDistance}px`</b>
                 </div>
               </label>
               <div className="settings-bond-tools">

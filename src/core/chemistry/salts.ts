@@ -1,6 +1,6 @@
 import type { AtomObject, BondObject, Vec } from '../../types/document';
 import { normalize, sub } from '../geometry';
-import { atomLabelLayout, atomParts, terminalLabelShift } from './labels';
+import { atomLabelLayoutForNeighbor, atomParts, atomLabelLayout } from './labels';
 
 /**
  * 能与酸性氢交换的金属及其常见阳离子电荷。
@@ -65,6 +65,8 @@ export interface AcidicSaltPlan {
     charge: number;
     fontSize: number;
   };
+  /** 酸根中真正与金属相邻的连接原子位置。 */
+  attach: Vec;
 }
 
 /**
@@ -72,13 +74,13 @@ export interface AcidicSaltPlan {
  * - OH/HO → O⁻；COOH → COO⁻；SO₃H → SO₃⁻；
  * - 金属沿键轴延长线，或垂直于键轴的侧向摆放；
  * - 左侧官能团自动把侧向金属放到左边，避免伸进苯环；
- * - distance > 0 时作为最小金属–酸根距离，但仍会自动避让标签，避免重叠。
+ * - distance 就是金属到连接原子的距离；0 表示完全重叠。
  */
 export function planAcidicSalt(
   atom: AtomObject,
   metal: string,
   neighbor: Vec | null,
-  fallbackDistance: number,
+  _fallbackDistance: number,
   placement: CationPlacement = 'axial',
   distance = 0
 ): AcidicSaltPlan | null {
@@ -96,87 +98,33 @@ export function planAcidicSalt(
     hydrogens: null
   };
   const acidAtom: AtomObject = { ...atom, label: acidLabel };
-  const acidParts = atomParts(acidAtom);
-  const acidWidth = Math.max(28, acidParts.width + acidParts.fontSize * 0.34);
-  const acidHeight = Math.max(30, acidParts.fontSize * 1.5);
-  const labelShift = neighbor
-    ? terminalLabelShift(atom.position, neighbor, acidParts.width, acidHeight)
-    : { x: 0, y: 0 };
-  const labelCenter = {
-    x: atom.position.x + labelShift.x,
-    y: atom.position.y + labelShift.y
-  };
+  // 以“脱氢后的酸根”计算标签锚点：键真正连接在 O / 羧基 C 的字形上。
+  const layout = atomLabelLayoutForNeighbor(acidAtom, neighbor);
+  const attach = layout.attach;
 
-  const cationLabel: AtomObject['label'] = {
-    element: metal,
-    charge,
-    isotope: null,
-    radical: 'none',
-    lonePairs: 0,
-    hydrogens: null,
-    group: null,
-    fontSize
-  };
-  const cationWidth =
-    atomParts({ ...atom, label: cationLabel }).width + (charge > 0 ? fontSize * 0.3 : 0);
-  const cationHalfWidth = cationWidth / 2;
-  const cationHalfHeight = fontSize * 0.6;
-  const gap = Math.max(6, fontSize * 0.3);
-
-  const side =
-    neighbor && atom.position.x < neighbor.x - 1 ? -1 : 1;
+  const side = neighbor && attach.x < neighbor.x - 1 ? -1 : 1;
   const direction =
     placement === 'right'
       ? { x: side, y: 0 }
       : neighbor
-        ? normalize(sub(atom.position, neighbor))
+        ? normalize(sub(attach, neighbor))
         : { x: 0, y: -1 };
 
-  const boxLeft = labelCenter.x - acidWidth / 2;
-  const boxRight = labelCenter.x + acidWidth / 2;
-  const boxTop = labelCenter.y - acidHeight / 2;
-  const boxBottom = labelCenter.y + acidHeight / 2;
-  let required = 0;
-  if (direction.x > 0.001) {
-    required = Math.max(
-      required,
-      (boxRight + cationHalfWidth + gap - atom.position.x) / direction.x
-    );
-  } else if (direction.x < -0.001) {
-    required = Math.max(
-      required,
-      (atom.position.x - boxLeft + cationHalfWidth + gap) / -direction.x
-    );
-  }
-  if (direction.y > 0.001) {
-    required = Math.max(
-      required,
-      (boxBottom + cationHalfHeight + gap - atom.position.y) / direction.y
-    );
-  } else if (direction.y < -0.001) {
-    required = Math.max(
-      required,
-      (atom.position.y - boxTop + cationHalfHeight + gap) / -direction.y
-    );
-  }
-
-  const bondLength = neighbor
-    ? Math.hypot(atom.position.x - neighbor.x, atom.position.y - neighbor.y)
-    : fallbackDistance;
-  const minDistance = distance > 0 ? distance : bondLength;
-  const resolved = Math.max(minDistance, required);
+  // distance 就是金属中心到连接原子字形中心的距离；0 表示完全重叠。
+  const resolved = distance;
 
   return {
     acidLabel,
     cation: {
       element: metal,
       position: {
-        x: atom.position.x + direction.x * resolved,
-        y: atom.position.y + direction.y * resolved
+        x: attach.x + direction.x * resolved,
+        y: attach.y + direction.y * resolved
       },
       charge,
       fontSize
-    }
+    },
+    attach
   };
 }
 
@@ -188,16 +136,17 @@ export function acidicGroupAtomAt(
 ): AtomObject | null {
   for (const atom of atoms) {
     if (!isAcidicGroupLabel(atom)) continue;
-    const parts = atomParts(atom);
     const layout = atomLabelLayout(atom, bonds);
+    const parts = atomParts(atom, false, layout.flip);
     const chargePad = atom.label.charge ? parts.fontSize * 0.34 : 0;
     const halfWidth = Math.max(28, parts.width + parts.fontSize * 0.34 + chargePad) / 2 + 4;
     const halfHeight = Math.max(30, parts.fontSize * 1.5) / 2 + 4;
     const centerX = atom.position.x + layout.dx;
     const centerY = atom.position.y + layout.dy;
     if (
-      Math.abs(point.x - centerX) <= halfWidth &&
-      Math.abs(point.y - centerY) <= halfHeight
+      (Math.abs(point.x - centerX) <= halfWidth &&
+        Math.abs(point.y - centerY) <= halfHeight) ||
+      Math.hypot(point.x - atom.position.x, point.y - atom.position.y) <= 14
     ) {
       return atom;
     }
