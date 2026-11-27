@@ -79,6 +79,7 @@ import {
   nextBondOrderType,
   nextChainBond,
   validateBondUpgrade,
+  STANDARD_BOND_LENGTH,
   type BondAnchor
 } from '../../core/chemistry/chain';
 import { eraseAlongPath, findErasableAt, type EraserTargets } from '../../core/eraser';
@@ -796,6 +797,14 @@ function ringAttachmentAt(
   }
   if (!anchor || !anchor.group?.ringFrame) return null;
   const group = anchor.group;
+  // 现有环可能不是 40px：取锚点相邻键长的中位数作为环半径，
+  // 新环中心仍按“旧环半径 + 一条新键”向外延伸。
+  const ringSizes = anchor.bonds
+    .map((bond) => Math.hypot(bond.end.x - bond.start.x, bond.end.y - bond.start.y))
+    .filter((length) => length > 1)
+    .sort((a, b) => a - b);
+  const ringSize =
+    ringSizes.length > 0 ? ringSizes[Math.floor(ringSizes.length / 2)] : STANDARD_BOND_LENGTH;
   const groupCenter = {
     x: group.x + group.width / 2,
     y: group.y + group.height / 2
@@ -820,11 +829,11 @@ function ringAttachmentAt(
   // 因此让模板选中的顶点指向旧环环心（-outward），而不是指向外侧。
   const rotation =
     Math.atan2(-outward.y, -outward.x) - Math.atan2(base.y, base.x);
-  // 环半径 40 + 一条取代基单键长度 40，让新环像甲基一样通过单键连在顶点外侧。
+  // 环半径 + 一条取代基单键长度，让新环像甲基一样通过单键连在顶点外侧。
   return {
     center: {
-      x: anchor.point.x + outward.x * 80,
-      y: anchor.point.y + outward.y * 80
+      x: anchor.point.x + outward.x * ringSize * 2,
+      y: anchor.point.y + outward.y * ringSize * 2
     },
     rotation,
     groupId: group.id,
@@ -913,7 +922,12 @@ function ringCyclesInGroup(
         if (!closing) return;
         const bondIds = [...pathBonds, closing.bondId];
         if (new Set(bondIds).size !== 6) return;
-        if (bondIds.some((id) => bondLength(id) < 30 || bondLength(id) > 50)) return;
+        // 环键长由用户设置决定（8–400），不能用固定的 30–50px 窗口识别；
+        // 改为要求六条边等长（正六边形），角度检查仍然保留。
+        const lengths = bondIds.map((id) => bondLength(id));
+        const shortest = Math.min(...lengths);
+        const longest = Math.max(...lengths);
+        if (shortest < 1 || longest > shortest * 1.25) return;
         const vertices = pathNodes.map((key) => positions.get(key)!).filter(Boolean);
         if (vertices.length !== 6) return;
         // 正六边形内角约 120°；允许环被整体旋转后的少量浮点误差。
@@ -961,6 +975,8 @@ type FusedBenzeneTarget = {
   rotation: number;
   ringCount: number;
   makeOuter: boolean;
+  /** 被点击环的实际键长；并环必须沿用同一尺寸，不能写死 40px。 */
+  size: number;
 };
 
 /**
@@ -974,14 +990,18 @@ function fusedBenzeneAt(
 ): FusedBenzeneTarget | { blocked: string } | null {
   const bond = findBondAt(doc, point, 9 / zoom);
   if (!bond?.parentId) return null;
+  const size = Math.hypot(bond.end.x - bond.start.x, bond.end.y - bond.start.y);
   const parent = getObject(doc, bond.parentId);
   if (!parent || parent.type !== 'group') return null;
   const root = ringSystemRoot(doc, parent);
   if (!root?.ringFrame) return null;
   // 端点附近仍按“碳原子上加取代基”处理，键身中段才做并环。
+  // 9/zoom 在低倍率下可能超过半根键长（91px 键在 15% 缩放下会整根被判为端点），
+  // 因此同时按实际键长封顶，保证任何倍率都能点到键身中段。
+  const endpointTolerance = Math.min(9 / zoom, size * 0.25);
   if (
-    Math.hypot(point.x - bond.start.x, point.y - bond.start.y) <= 9 / zoom ||
-    Math.hypot(point.x - bond.end.x, point.y - bond.end.y) <= 9 / zoom
+    Math.hypot(point.x - bond.start.x, point.y - bond.start.y) <= endpointTolerance ||
+    Math.hypot(point.x - bond.end.x, point.y - bond.end.y) <= endpointTolerance
   ) {
     return null;
   }
@@ -996,7 +1016,7 @@ function fusedBenzeneAt(
   if (!template) return null;
   const [p0, p1] = template.atoms;
   const edgeVector = { x: p1.x - p0.x, y: p1.y - p0.y };
-  const edgeMid = { x: ((p0.x + p1.x) / 2) * 40, y: ((p0.y + p1.y) / 2) * 40 };
+  const edgeMid = { x: ((p0.x + p1.x) / 2) * size, y: ((p0.y + p1.y) / 2) * size };
   const midpoint = { x: (bond.start.x + bond.end.x) / 2, y: (bond.start.y + bond.end.y) / 2 };
   // 公共边的方向有两种；用“新环心应落在旧环心反侧”选择正确的一种。
   // 中心必须和旋转角成对计算，否则新环会共用错误的模板边并重复画出公共键。
@@ -1015,7 +1035,7 @@ function fusedBenzeneAt(
   });
   candidates.sort((a, b) => a.dot - b.dot);
   const chosen = candidates[0];
-  if (cycles.some((cycle) => Math.hypot(cycle.center.x - chosen.center.x, cycle.center.y - chosen.center.y) < 52)) {
+  if (cycles.some((cycle) => Math.hypot(cycle.center.x - chosen.center.x, cycle.center.y - chosen.center.y) < size * 1.3)) {
     return { blocked: '这个方向已有苯环，无法继续共用这条键' };
   }
   return {
@@ -1024,8 +1044,23 @@ function fusedBenzeneAt(
     center: chosen.center,
     rotation: chosen.rotation,
     ringCount: cycles.length + 1,
-    makeOuter: isBenzeneGroup(root)
+    makeOuter: isBenzeneGroup(root),
+    size
   };
+}
+
+/**
+ * 三环稠环的环心是否共线：共线为蒽（直线型），否则为菲（角型）。
+ */
+function ringCentersCollinear(centers: Vec[], tolerance = 1.5): boolean {
+  if (centers.length < 3) return false;
+  const [first, middle, last] = centers;
+  const ab = { x: middle.x - first.x, y: middle.y - first.y };
+  const ac = { x: last.x - first.x, y: last.y - first.y };
+  const cross = Math.abs(ab.x * ac.y - ab.y * ac.x);
+  const length = Math.hypot(ac.x, ac.y);
+  if (length < 1) return false;
+  return cross / length <= tolerance;
 }
 
 function polygonPoints(start: Vec, end: Vec, sides = 6, star = 0): Vec[] {
@@ -2625,7 +2660,10 @@ export function CanvasStage() {
       return;
     }
     const points = template.atoms.map((atom) => {
-      const rotated = rotateVector({ x: atom.x * 40, y: atom.y * 40 }, fused.rotation);
+      const rotated = rotateVector(
+        { x: atom.x * fused.size, y: atom.y * fused.size },
+        fused.rotation
+      );
       return { x: fused.center.x + rotated.x, y: fused.center.y + rotated.y };
     });
     const pauling = state.chem.benzeneStyle === 'pauling';
@@ -2661,11 +2699,16 @@ export function CanvasStage() {
     const top = Math.min(oldBounds.y, newBounds.y);
     const right = Math.max(oldBounds.x + oldBounds.width, newBounds.x + newBounds.width);
     const bottom = Math.max(oldBounds.y + oldBounds.height, newBounds.y + newBounds.height);
+    const centers = fused.makeOuter
+      ? [fused.baseCenter, fused.center]
+      : [...(fused.root.ringCenters ?? []), fused.center];
     const name =
       fused.ringCount === 2
         ? '萘环'
         : fused.ringCount === 3
-          ? '三环芳烃'
+          ? ringCentersCollinear(centers)
+            ? '蒽'
+            : '菲'
           : fused.ringCount === 4
             ? '四环芳烃'
             : '多环芳烃';
@@ -2683,7 +2726,9 @@ export function CanvasStage() {
         ringFrame: true,
         style: cloneStyle(CHEM_GROUP_STYLE),
         // 圆心同时用于“点环内部选中稠环”，因此凯库勒式也保留。
-        ringCenters: [fused.baseCenter, fused.center],
+        ringCenters: centers,
+        // 鲍林式内圈基准半径是 22（对应 40px 键长），随实际环尺寸等比缩放。
+        ringScale: fused.size / STANDARD_BOND_LENGTH,
         ringCircleStyle: pauling ? 'pauling' : undefined,
         childIds: [fused.root.id, ...nextIds]
       };
@@ -2710,7 +2755,7 @@ export function CanvasStage() {
       y: top,
       width: right - left,
       height: bottom - top,
-      ringCenters: [...(fused.root.ringCenters ?? []), fused.center],
+      ringCenters: centers,
       childIds: [...fused.root.childIds, ...nextIds]
     };
     let next = replaceObject(state.doc, fused.root.id, () => updatedRoot);
