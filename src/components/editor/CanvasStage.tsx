@@ -2413,7 +2413,8 @@ export function CanvasStage() {
           hydroxyl,
           preset.element,
           neighbor,
-          state.chemBondLength
+          state.chemBondLength,
+          state.chemCationPlacement
         );
         if (plan) {
           const cation = makeChemAtom(

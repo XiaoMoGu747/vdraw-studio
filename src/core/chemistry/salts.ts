@@ -18,6 +18,9 @@ export function saltMetalCharge(element: string): number | null {
   return SALT_METALS[element] ?? null;
 }
 
+/** 成盐时金属阳离子的摆放方式：键轴延长线（原 H 方向）或 O 的右侧。 */
+export type CationPlacement = 'axial' | 'right';
+
 export function isHydroxylLabel(atom: AtomObject): boolean {
   return atom.label.group === 'OH' || atom.label.group === 'HO';
 }
@@ -37,15 +40,16 @@ export interface HydroxylSaltPlan {
 /**
  * 把“羟基上的 H”替换为金属阳离子：
  * - O 标签由 OH/HO 变为带 −1 电荷的 O；
- * - 金属放在 O–取代基键的延长线上（原来 H 所在方向），距离不小于一个键长，
- *   因此不会压住 O 标签，也不会出现横向错位；
+ * - 金属可放在 O–取代基键的延长线上（原 H 方向），或放在 O 的右侧；
+ * - 距离不小于一个键长，避免压住 O 标签；
  * - 不创建共价键，保持离子对的化学语义。
  */
 export function planHydroxylSalt(
   atom: AtomObject,
   metal: string,
   neighbor: Vec | null,
-  fallbackDistance: number
+  fallbackDistance: number,
+  placement: CationPlacement = 'axial'
 ): HydroxylSaltPlan | null {
   if (!isHydroxylLabel(atom)) return null;
   const charge = saltMetalCharge(metal);
@@ -63,9 +67,12 @@ export function planHydroxylSalt(
   const cationWidth =
     atomParts({ ...atom, label: cationLabel }).width + (charge > 0 ? fontSize * 0.3 : 0);
 
-  const direction = neighbor
-    ? normalize(sub(atom.position, neighbor))
-    : { x: 0, y: -1 };
+  const direction =
+    placement === 'right'
+      ? { x: 1, y: 0 }
+      : neighbor
+        ? normalize(sub(atom.position, neighbor))
+        : { x: 0, y: -1 };
   const bondLength = neighbor
     ? Math.hypot(atom.position.x - neighbor.x, atom.position.y - neighbor.y)
     : fallbackDistance;

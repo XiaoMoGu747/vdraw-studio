@@ -63,6 +63,7 @@ import {
 import { serializeDocument } from '../src/core/io/serialize';
 import { documentToSvgString } from '../src/core/io/svg';
 import {
+  getObjectBounds,
   hitTestObject,
   rotateObject,
   scaleDocumentObjects,
@@ -2162,4 +2163,67 @@ test('环内键级切换：只有 ringFrame 编组内的键才带朝心侧别', 
     'double'
   );
   assert.equal(ringBondInnerSide(ringDoc, standalone), null);
+});
+
+test('选中框：原子/官能团的包围盒完整覆盖字号与电荷上标', () => {
+  const doc = createDocument('blank-landscape', '选中框');
+  const layer = doc.layers[0];
+  const hydroxyl = createAtomObject(layer.id, DEFAULT_STYLE, { x: 100, y: 100 }, {
+    ...emptyAtomLabel('O'),
+    group: 'OH',
+    fontSize: 55
+  });
+  const bounds = getObjectBounds(hydroxyl);
+  assert.ok(bounds.height >= 55, `高度 ${bounds.height} 未覆盖55px字号`);
+  assert.ok(bounds.width >= 72, `宽度 ${bounds.width} 未覆盖 OH 标签`);
+
+  const anion = createAtomObject(layer.id, DEFAULT_STYLE, { x: 200, y: 100 }, {
+    ...emptyAtomLabel('O'),
+    charge: -1,
+    fontSize: 55
+  });
+  const plain = { ...anion, label: { ...anion.label, charge: 0 } };
+  assert.ok(
+    getObjectBounds(anion).width > getObjectBounds(plain).width,
+    '电荷上标应计入选中框宽度'
+  );
+});
+
+test('隐藏电荷：SVG 导出与画布设置一致', () => {
+  const doc = createDocument('blank-landscape', '隐藏电荷');
+  const layer = doc.layers[0];
+  const anion = createAtomObject(layer.id, DEFAULT_STYLE, { x: 100, y: 100 }, {
+    ...emptyAtomLabel('O'),
+    charge: -1,
+    fontSize: 20
+  });
+  const docWith = { ...doc, layers: [{ ...layer, objects: [anion] }] };
+  const visible = documentToSvgString(docWith, { includeBackground: false });
+  const hidden = documentToSvgString(docWith, {
+    includeBackground: false,
+    hideCharges: true
+  });
+  assert.ok(visible.includes('−'), '默认应输出负电荷');
+  assert.ok(!hidden.includes('−'), '隐藏后不应输出负电荷');
+});
+
+test('成盐摆位：右侧模式让金属与 O 水平对齐', () => {
+  const doc = createDocument('blank-landscape', '成盐摆位');
+  const layer = doc.layers[0];
+  const oxygen = createAtomObject(layer.id, DEFAULT_STYLE, { x: 0, y: 0 }, {
+    ...emptyAtomLabel('O'),
+    group: 'OH',
+    fontSize: 20
+  });
+  const axial = planHydroxylSalt(oxygen, 'Na', { x: 0, y: 100 }, 40, 'axial');
+  assert.ok(axial);
+  if (!axial) return;
+  assert.ok(Math.abs(axial.cation.position.x) < 0.001);
+  assert.ok(axial.cation.position.y < 0);
+
+  const right = planHydroxylSalt(oxygen, 'Na', { x: 0, y: 100 }, 40, 'right');
+  assert.ok(right);
+  if (!right) return;
+  assert.ok(right.cation.position.x > 0, '右侧模式应在 O 的右边');
+  assert.ok(Math.abs(right.cation.position.y) < 0.001, '右侧模式应与 O 水平对齐');
 });

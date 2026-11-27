@@ -583,6 +583,7 @@ function AtomView({
   object: AtomObject;
   implicitHydrogens: boolean;
 }) {
+  const hideCharges = useAppStore((state) => state.chemHideCharges);
   const parts = atomParts(object, implicitHydrogens);
   const fontSize = parts.fontSize;
   const scale = fontSize / ATOM_FONT_SIZE;
@@ -613,7 +614,7 @@ function AtomView({
           {parts.isotope}
         </text>
       ) : null}
-      {parts.charge ? (
+      {parts.charge && !hideCharges ? (
         <text
           x={parts.width / 2 + 2}
           y={-fontSize * 0.44}

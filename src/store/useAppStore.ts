@@ -38,6 +38,7 @@ import {
   type TemplateId
 } from '../core/document';
 import { MAX_ZOOM, MIN_ZOOM, clamp, fitViewport, zoomAround } from '../core/geometry';
+import type { CationPlacement } from '../core/chemistry/salts';
 import {
   addObjectsToLayer,
   allObjects,
@@ -232,6 +233,10 @@ interface Prefs {
   chemBondSpacing: number;
   /** 苯环/环上双键的内线键距（页面 px），与单独双键/三键独立。 */
   chemRingBondSpacing: number;
+  /** 成盐时金属阳离子的摆放：键轴延长线或 O 的右侧。 */
+  chemCationPlacement: CationPlacement;
+  /** 隐藏原子标签上的正负电荷上标。 */
+  chemHideCharges: boolean;
   /** 新建原子/元素标签的默认字号（px）。 */
   chemAtomSize: number;
   chemBenzeneStyle: 'pauling' | 'kekule';
@@ -333,6 +338,8 @@ const DEFAULT_PREFS: Prefs = {
   chemBondWidth: CHEM_BOND_WIDTH_DEFAULT,
   chemBondSpacing: CHEM_BOND_SPACING_DEFAULT,
   chemRingBondSpacing: CHEM_RING_BOND_SPACING_DEFAULT,
+  chemCationPlacement: 'axial',
+  chemHideCharges: false,
   chemAtomSize: CHEM_ATOM_SIZE_DEFAULT,
   chemBenzeneStyle: 'kekule',
   showToolLabels: false,
@@ -463,6 +470,10 @@ interface AppState {
   chemBondSpacing: number;
   /** 新建苯环/环上双键的内线间距。 */
   chemRingBondSpacing: number;
+  /** 成盐时金属阳离子的摆放方式。 */
+  chemCationPlacement: CationPlacement;
+  /** 是否隐藏原子标签上的电荷上标。 */
+  chemHideCharges: boolean;
   /** 新建原子标签的默认字号（px）。 */
   chemAtomSize: number;
   recent: RecentEntry[];
@@ -650,6 +661,10 @@ interface AppState {
   setChemBondSpacing: (spacing: number) => void;
   /** 只改环上双键的内线间距，不影响单独双键/三键。 */
   setChemRingBondSpacing: (spacing: number) => void;
+  /** 设置成盐金属阳离子的摆放方式。 */
+  setChemCationPlacement: (placement: CationPlacement) => void;
+  /** 显示/隐藏原子标签上的正负电荷。 */
+  setChemHideCharges: (hide: boolean) => void;
   setChemAtomSize: (size: number) => void;
   /** 在对象列表内复制单个对象（含编组子对象），并选中新副本。 */
   duplicateObject: (id: string) => void;
@@ -853,6 +868,14 @@ function readPrefs(): Prefs {
               CHEM_BOND_SPACING_RANGE.max
             )
           : DEFAULT_PREFS.chemRingBondSpacing,
+      chemCationPlacement:
+        parsed.chemCationPlacement === 'right' || parsed.chemCationPlacement === 'axial'
+          ? parsed.chemCationPlacement
+          : DEFAULT_PREFS.chemCationPlacement,
+      chemHideCharges:
+        typeof parsed.chemHideCharges === 'boolean'
+          ? parsed.chemHideCharges
+          : DEFAULT_PREFS.chemHideCharges,
       chemAtomSize:
         typeof parsed.chemAtomSize === 'number' && Number.isFinite(parsed.chemAtomSize)
           ? clamp(parsed.chemAtomSize, CHEM_ATOM_SIZE_RANGE.min, CHEM_ATOM_SIZE_RANGE.max)
@@ -974,6 +997,8 @@ export const useAppStore = create<AppState>((set, get) => {
     chemBondWidth: prefs.chemBondWidth,
     chemBondSpacing: prefs.chemBondSpacing,
     chemRingBondSpacing: prefs.chemRingBondSpacing,
+    chemCationPlacement: prefs.chemCationPlacement,
+    chemHideCharges: prefs.chemHideCharges,
     chemAtomSize: prefs.chemAtomSize,
     recent: readRecent(),
     customTemplates: prefs.customTemplates,
@@ -2027,6 +2052,16 @@ export const useAppStore = create<AppState>((set, get) => {
       );
       set({ chemRingBondSpacing: value });
       scheduleBrushPrefs({ chemRingBondSpacing: value });
+    },
+
+    setChemCationPlacement: (placement) => {
+      set({ chemCationPlacement: placement });
+      scheduleBrushPrefs({ chemCationPlacement: placement });
+    },
+
+    setChemHideCharges: (hide) => {
+      set({ chemHideCharges: hide });
+      scheduleBrushPrefs({ chemHideCharges: hide });
     },
 
     setChemAtomSize: (size) => {

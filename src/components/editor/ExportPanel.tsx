@@ -82,6 +82,7 @@ export function ExportPanel() {
   const setExportRegion = useAppStore((state) => state.setExportRegion);
   const exportQuality = useAppStore((state) => state.exportQuality);
   const setExportQuality = useAppStore((state) => state.setExportQuality);
+  const hideCharges = useAppStore((state) => state.chemHideCharges);
   const fileActions = useFileActions();
   const [busy, setBusy] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -129,7 +130,8 @@ export function ExportPanel() {
           region: exportRegionForScope
             ? { x: box.x, y: box.y, width: box.width, height: box.height }
             : null,
-          includeIds: onlyIds
+          includeIds: onlyIds,
+          hideCharges
         });
         setPreviewSrc(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`);
       } catch {
@@ -142,7 +144,7 @@ export function ExportPanel() {
     return () => window.clearTimeout(timer);
     // box / onlyIdsKey 用原始值做依赖，画布重渲染不会触发重新序列化。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, doc, transparent, scope, box.x, box.y, box.width, box.height, onlyIdsKey]);
+  }, [open, doc, transparent, scope, box.x, box.y, box.width, box.height, onlyIdsKey, hideCharges]);
 
   // 浮层栈：面板打开时全局快捷键让位，Esc 只关闭面板。
   useEffect(() => {

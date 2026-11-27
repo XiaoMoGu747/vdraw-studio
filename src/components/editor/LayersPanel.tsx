@@ -76,6 +76,7 @@ export function LayersPanel({
   const [dropTarget, setDropTarget] = useState<{ id: string; position: LayerDropPosition } | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [layerMenu, setLayerMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const [objectMenu, setObjectMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const [objectDrop, setObjectDrop] = useState<{
     id: string;
@@ -92,6 +93,23 @@ export function LayersPanel({
     document.addEventListener('pointerdown', close);
     return () => document.removeEventListener('pointerdown', close);
   }, [menuOpen]);
+
+  useEffect(() => {
+    if (!layerMenu) return;
+    const close = (event: PointerEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (!target?.closest('[data-layer-context-menu]')) setLayerMenu(null);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setLayerMenu(null);
+    };
+    document.addEventListener('pointerdown', close);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', close);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [layerMenu]);
 
   useEffect(() => {
     if (!objectMenu) return;
@@ -294,6 +312,15 @@ export function LayersPanel({
             setRenamingId(layer.id);
             setRenameDraft(layer.name);
           }}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            setActiveLayer(layer.id);
+            setSelectedIds([layer.id]);
+            setMenuOpen(false);
+            setObjectMenu(null);
+            setLayerMenu({ id: layer.id, x: event.clientX, y: event.clientY });
+          }}
           onKeyDown={(event) => {
             if (event.key !== 'Enter' && event.key !== ' ') return;
             setActiveLayer(layer.id);
@@ -335,25 +362,6 @@ export function LayersPanel({
                   }`
                 : `${layer.objects.length} 个对象`}
             </span>
-            {layer.id === doc.activeLayerId ? (
-              <select
-                className="layer-blend"
-                data-testid={`layer-blend-${layer.id}`}
-                title="图层混合模式"
-                value={layer.blendMode ?? 'normal'}
-                onClick={(event) => event.stopPropagation()}
-                onChange={(event) =>
-                  setLayerBlendMode(layer.id, event.target.value as LayerBlendMode)
-                }
-              >
-                <option value="normal">正常</option>
-                <option value="multiply">正片叠底</option>
-                <option value="screen">滤色</option>
-                <option value="overlay">叠加</option>
-                <option value="darken">变暗</option>
-                <option value="lighten">变亮</option>
-              </select>
-            ) : null}
           </span>
           <span className="layer-tools">
             <button
@@ -867,6 +875,107 @@ export function LayersPanel({
           </div>
         </div>
       </div>
+
+      {layerMenu
+        ? (() => {
+            const layer = doc.layers.find((item) => item.id === layerMenu.id);
+            if (!layer) return null;
+            const index = doc.layers.findIndex((item) => item.id === layer.id);
+            let canMergeDown = false;
+            if (layer.kind !== 'folder' && !layer.locked) {
+              for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
+                const candidate = doc.layers[cursor];
+                if ((candidate.parentId ?? null) !== (layer.parentId ?? null)) continue;
+                if (candidate.kind !== 'folder' && !candidate.locked) {
+                  canMergeDown = true;
+                  break;
+                }
+              }
+            }
+            return (
+              <div
+                className="layer-context-menu"
+                data-layer-context-menu
+                role="menu"
+                data-testid="layer-context-menu"
+                style={{
+                  left: Math.min(layerMenu.x, window.innerWidth - 220),
+                  top: Math.min(layerMenu.y, window.innerHeight - 230)
+                }}
+              >
+                <button
+                  type="button"
+                  role="menuitem"
+                  data-testid="layer-ctx-rename"
+                  onClick={() => {
+                    setRenamingId(layer.id);
+                    setRenameDraft(layer.name);
+                    setLayerMenu(null);
+                  }}
+                >
+                  <Icon name="text" size={14} />
+                  重命名
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  data-testid="layer-ctx-duplicate"
+                  onClick={() => {
+                    duplicateLayer(layer.id);
+                    setLayerMenu(null);
+                  }}
+                >
+                  <Icon name="copy" size={14} />
+                  复制
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  data-testid="layer-ctx-merge"
+                  disabled={!canMergeDown}
+                  onClick={() => {
+                    mergeLayerDown(layer.id);
+                    setLayerMenu(null);
+                  }}
+                >
+                  <Icon name="merge" size={14} />
+                  向下合并
+                </button>
+                <label className="layer-context-menu__blend">
+                  <span>混合模式</span>
+                  <select
+                    value={layer.blendMode ?? 'normal'}
+                    data-testid="layer-ctx-blend"
+                    onChange={(event) =>
+                      setLayerBlendMode(layer.id, event.target.value as LayerBlendMode)
+                    }
+                  >
+                    <option value="normal">正常</option>
+                    <option value="multiply">正片叠底</option>
+                    <option value="screen">滤色</option>
+                    <option value="overlay">叠加</option>
+                    <option value="darken">变暗</option>
+                    <option value="lighten">变亮</option>
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="is-danger"
+                  data-testid="layer-ctx-delete"
+                  disabled={doc.layers.length <= 1}
+                  onClick={() => {
+                    deleteLayer(layer.id);
+                    setLayerMenu(null);
+                  }}
+                >
+                  <Icon name="trash" size={14} />
+                  删除
+                </button>
+              </div>
+            );
+          })()
+        : null}
 
       {objectMenu ? (
         <div

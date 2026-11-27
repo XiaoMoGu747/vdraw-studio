@@ -14,6 +14,8 @@ export interface RasterExportOptions {
   region?: ExportRegion | null;
   /** 只导出这些对象（选中对象导出）；为空表示全部可见对象。 */
   includeIds?: string[] | null;
+  /** 隐藏原子标签上的正负电荷上标。 */
+  hideCharges?: boolean;
 }
 
 /**
@@ -79,7 +81,12 @@ export async function documentToCanvas(
   const { scale = 2, transparent = false, region, includeIds } = options;
   const solid = format === 'jpg' || !transparent;
   const box = resolveExportBox(doc, region);
-  const svg = documentToSvgString(doc, { includeBackground: solid, region, includeIds });
+  const svg = documentToSvgString(doc, {
+    includeBackground: solid,
+    region,
+    includeIds,
+    hideCharges: options.hideCharges === true
+  });
   const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
   const url = URL.createObjectURL(blob);
 
@@ -122,7 +129,8 @@ export function documentToPngBase64(
   doc: VDrawDocument,
   scale = 2,
   transparent = false,
-  region?: ExportRegion | null
+  region?: ExportRegion | null,
+  hideCharges = false
 ): Promise<string> {
-  return documentToRasterBase64(doc, 'png', { scale, transparent, region });
+  return documentToRasterBase64(doc, 'png', { scale, transparent, region, hideCharges });
 }

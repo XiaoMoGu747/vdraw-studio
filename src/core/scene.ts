@@ -170,8 +170,9 @@ function computeObjectBounds(obj: SceneObject, doc?: VDrawDocument): Rect {
     case 'atom': {
       // 标签宽度随元素/基团变化，不能用固定 40×32，否则选择框、对齐和适应窗口都会失真。
       const parts = atomParts(obj);
-      const width = Math.max(28, parts.width + 18);
-      const height = 28;
+      const chargePad = obj.label.charge ? parts.fontSize * 0.34 : 0;
+      const width = Math.max(30, parts.width + parts.fontSize * 0.34 + chargePad);
+      const height = Math.max(30, parts.fontSize * 1.5);
       return {
         x: obj.position.x - width / 2,
         y: obj.position.y - height / 2,

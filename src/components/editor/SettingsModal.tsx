@@ -111,6 +111,8 @@ export function SettingsModal() {
   const chemBondWidth = useAppStore((state) => state.chemBondWidth);
   const chemBondSpacing = useAppStore((state) => state.chemBondSpacing);
   const chemRingBondSpacing = useAppStore((state) => state.chemRingBondSpacing);
+  const chemCationPlacement = useAppStore((state) => state.chemCationPlacement);
+  const chemHideCharges = useAppStore((state) => state.chemHideCharges);
   const chemAtomSize = useAppStore((state) => state.chemAtomSize);
   const setChemBondMetric = useAppStore((state) => state.setChemBondMetric);
   const resetChemBondMetrics = useAppStore((state) => state.resetChemBondMetrics);
@@ -118,6 +120,8 @@ export function SettingsModal() {
   const setChemBondWidth = useAppStore((state) => state.setChemBondWidth);
   const setChemBondSpacing = useAppStore((state) => state.setChemBondSpacing);
   const setChemRingBondSpacing = useAppStore((state) => state.setChemRingBondSpacing);
+  const setChemCationPlacement = useAppStore((state) => state.setChemCationPlacement);
+  const setChemHideCharges = useAppStore((state) => state.setChemHideCharges);
   const setChemAtomSize = useAppStore((state) => state.setChemAtomSize);
   const fileActions = useFileActions();
   const [tab, setTab] = useState<SettingsTab>('interface');
@@ -448,6 +452,37 @@ export function SettingsModal() {
                 onChange={toggleImplicitHydrogens}
                 testId="settings-implicit-hydrogens"
               />
+              <Toggle
+                checked={chemHideCharges}
+                label="隐藏原子电荷符号"
+                hint="不再显示 O⁻、Na⁺ 等正负电荷上标；数据仍保留，画布与导出同步生效"
+                onChange={() => setChemHideCharges(!chemHideCharges)}
+                testId="settings-hide-charges"
+              />
+              <div className="settings-field settings-field--stack">
+                <span>
+                  <strong>成盐金属离子摆位</strong>
+                  <em>用 Na/Ca 等替换羟基氢时，金属阳离子放在 O 的键轴延长线或右侧</em>
+                </span>
+                <div className="settings-segments" data-testid="settings-cation-placement">
+                  {(
+                    [
+                      ['axial', '键轴延长线'],
+                      ['right', 'O 的右侧']
+                    ] as const
+                  ).map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      className={chemCationPlacement === value ? 'is-active' : ''}
+                      data-testid={`settings-cation-placement-${value}`}
+                      onClick={() => setChemCationPlacement(value)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div className="settings-bond-tools">
                 <button
                   type="button"

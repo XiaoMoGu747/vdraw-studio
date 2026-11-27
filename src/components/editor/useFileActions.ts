@@ -175,6 +175,7 @@ export function useFileActions() {
   const exportAs = async (format: ExportFormat, options: ExportOptions = {}): Promise<boolean> => {
     const store = useAppStore.getState();
     const doc = store.doc;
+    const hideCharges = store.chemHideCharges;
     const meta = FORMAT_META[format];
     const region = options.region ?? null;
     const includeIds = options.onlyIds ?? null;
@@ -192,7 +193,8 @@ export function useFileActions() {
           region,
           includeIds,
           // PDF 打印管线对 mix-blend-mode 的支持不稳定：导出前把 multiply 预乘到纸张底色。
-          bakeMultiply: true
+          bakeMultiply: true,
+          hideCharges
         });
         const api = window.vdraw;
         if (!api) {
@@ -223,7 +225,12 @@ export function useFileActions() {
       }
 
       if (format === 'svg') {
-        data = documentToSvgString(doc, { includeBackground: !transparent, region, includeIds });
+        data = documentToSvgString(doc, {
+          includeBackground: !transparent,
+          region,
+          includeIds,
+          hideCharges
+        });
       } else {
         // PNG / JPG 共用同一份 SVG 光栅化管线，尺寸与质量口径完全一致。
         data = await documentToRasterBase64(doc, format, {
@@ -231,7 +238,8 @@ export function useFileActions() {
           quality: store.exportQuality,
           transparent,
           region,
-          includeIds
+          includeIds,
+          hideCharges
         });
         encoding = 'base64';
       }

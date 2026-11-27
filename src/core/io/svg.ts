@@ -157,7 +157,7 @@ function textToSvg(obj: TextObject): string {
   return `<text x="${x}" y="${obj.y}" font-family="${escapeXml(obj.fontFamily)}" font-size="${obj.fontSize}" font-weight="${obj.fontWeight}"${obj.italic ? ' font-style="italic"' : ''} letter-spacing="${obj.letterSpacing ?? 0}" text-anchor="${anchor}" dominant-baseline="hanging" fill="${solid(obj.style.fill)}" opacity="${obj.style.opacity}"${rotationTransform(obj)}>${spans}</text>`;
 }
 
-function atomToSvg(obj: AtomObject, implicitHydrogens = false): string {
+function atomToSvg(obj: AtomObject, implicitHydrogens = false, hideCharges = false): string {
   const parts = atomParts(obj, implicitHydrogens);
   const scale = parts.fontSize / ATOM_FONT_SIZE;
   const color = solid(obj.style.fill) === 'none' ? '#1b1b1b' : solid(obj.style.fill);
@@ -175,7 +175,7 @@ function atomToSvg(obj: AtomObject, implicitHydrogens = false): string {
   return `<g transform="translate(${obj.position.x} ${obj.position.y})">
     <text x="0" y="0" text-anchor="middle" dominant-baseline="central" font-family="Cambria, 'Times New Roman', serif" font-size="${parts.fontSize}" fill="${color}">${escapeXml(parts.main)}</text>
     ${parts.isotope ? `<text x="${-parts.width / 2 - 2 * scale}" y="${-7 * scale}" text-anchor="end" font-family="Cambria, serif" font-size="${9 * scale}" fill="${color}">${parts.isotope}</text>` : ''}
-    ${parts.charge ? `<text x="${parts.width / 2 + 2 * scale}" y="${-7 * scale}" text-anchor="start" font-family="Cambria, serif" font-size="${9 * scale}" fill="${color}">${escapeXml(parts.charge)}</text>` : ''}
+    ${parts.charge && !hideCharges ? `<text x="${parts.width / 2 + 2 * scale}" y="${-7 * scale}" text-anchor="start" font-family="Cambria, serif" font-size="${9 * scale}" fill="${color}">${escapeXml(parts.charge)}</text>` : ''}
     ${dots.join('')}
   </g>`;
 }
@@ -202,7 +202,8 @@ function objectToSvg(
   obj: SceneObject,
   doc: VDrawDocument,
   bakeMultiply = false,
-  forceBuckets = false
+  forceBuckets = false,
+  hideCharges = false
 ): string {
   switch (obj.type) {
     case 'rect': {
@@ -361,7 +362,7 @@ function objectToSvg(
       return `<g opacity="${obj.style.opacity}">${lines}${polygons}${wavy}</g>`;
     }
     case 'atom':
-      return atomToSvg(obj, doc.implicitHydrogens === true);
+      return atomToSvg(obj, doc.implicitHydrogens === true, hideCharges);
     case 'arrow': {
       const geometry = buildArrowGeometry(obj.arrowKind, obj.start, obj.end);
       const stroke = solid(obj.style.stroke.paint) === 'none' ? '#1b1b1b' : solid(obj.style.stroke.paint);
@@ -431,6 +432,8 @@ export interface SvgExportOptions {
    * SVG/PNG/JPG 保持 false，继续使用 mix-blend-mode 的逐 dab 混合。
    */
   bakeMultiply?: boolean;
+  /** 隐藏原子标签上的正负电荷上标；与画布的“隐藏电荷”设置保持一致。 */
+  hideCharges?: boolean;
 }
 
 /**
@@ -480,7 +483,8 @@ export function documentToSvgString(doc: VDrawDocument, options: SvgExportOption
             obj,
             doc,
             options.bakeMultiply === true,
-            forceBuckets
+            forceBuckets,
+            options.hideCharges === true
           );
           return obj.clipIds?.length
             ? `<g clip-path="url(#clip-${obj.id})">${svg}</g>`
