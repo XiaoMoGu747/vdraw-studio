@@ -91,15 +91,40 @@ function attachmentToken(text: string, flip: boolean): string {
   return flip ? tokens[tokens.length - 1] : tokens[0];
 }
 
+const labelWidthCache = new Map<string, number>();
+let measureContext: CanvasRenderingContext2D | null | undefined;
+
+/**
+ * 与画布/导出一致的 Cambria 字形宽度。
+ * 用同一份测量算标签中心和 token 位置，OH 与 COOH 的 O→Na 距离才会严格相等。
+ */
 export function measureLabelWidth(text: string, fontSize: number): number {
-  let width = 0;
-  for (const char of text) {
-    if (/[\u4e00-\u9fa5]/.test(char)) width += fontSize;
-    else if (/[₀-₉]/.test(char)) width += fontSize * 0.36;
-    else if (/[A-Z]/.test(char)) width += fontSize * 0.66;
-    else width += fontSize * 0.5;
+  const key = `${fontSize}|${text}`;
+  const cached = labelWidthCache.get(key);
+  if (cached !== undefined) return cached;
+  if (measureContext === undefined) {
+    measureContext =
+      typeof document === 'undefined'
+        ? null
+        : document.createElement('canvas').getContext('2d');
   }
-  return Math.max(fontSize * 0.7, width);
+  let width = 0;
+  if (measureContext) {
+    measureContext.font = `${fontSize}px Cambria, "Times New Roman", serif`;
+    width = measureContext.measureText(text).width;
+  }
+  if (!width) {
+    for (const char of text) {
+      if (/[\u4e00-\u9fa5]/.test(char)) width += fontSize;
+      else if (/[₀-₉]/.test(char)) width += fontSize * 0.36;
+      else if (/[A-Z]/.test(char)) width += fontSize * 0.66;
+      else width += fontSize * 0.5;
+    }
+  }
+  const result = Math.max(fontSize * 0.7, width);
+  if (labelWidthCache.size > 500) labelWidthCache.clear();
+  labelWidthCache.set(key, result);
+  return result;
 }
 
 export function atomParts(

@@ -167,8 +167,20 @@ export function planAcidicSalt(
 
 /** 当前酸性官能团中带 H 的 O 的字形中心；用于光标提示与验证。 */
 export function acidOxygenAt(atom: AtomObject, bonds: BondObject[]): Vec | null {
+  const group = atom.label.group ?? '';
+  const deprotonated = [
+    'COO',
+    'COO⁻',
+    'COO-',
+    'CO₂',
+    'CO2',
+    'SO₃',
+    'SO3',
+    'SO₃⁻',
+    'SO3-'
+  ].includes(group);
   const isAnion = atom.label.element === 'O' && atom.label.charge === -1;
-  if (!isAcidicGroupLabel(atom) && !isAnion) return null;
+  if (!isAcidicGroupLabel(atom) && !isAnion && !deprotonated) return null;
   const layout = atomLabelLayout(atom, bonds);
   return acidOxygenCenter(atom, atomMainText(atom.label), layout);
 }

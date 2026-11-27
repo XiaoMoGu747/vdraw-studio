@@ -2395,3 +2395,28 @@ test('芳香环外接原子不应额外计入环 π 电子', () => {
   const ringAtom = bondingState([ringBond], 0, 0, true, new Set([ringBond.id]));
   assert.equal(ringAtom.pi, 1);
 });
+
+test('同一成盐距离下 OH 与 COOH 的 O→Na 距离严格相等', () => {
+  const doc = createDocument('blank-landscape', '距离一致');
+  const layer = doc.layers[0];
+  const oh = createAtomObject(layer.id, DEFAULT_STYLE, { x: 0, y: 0 }, {
+    ...emptyAtomLabel('O'),
+    group: 'OH',
+    fontSize: 24
+  });
+  const cooh = createAtomObject(layer.id, DEFAULT_STYLE, { x: 300, y: 0 }, {
+    ...emptyAtomLabel('C'),
+    group: 'COOH',
+    fontSize: 24
+  });
+  const ohPlan = planAcidicSalt(oh, 'Na', { x: 0, y: 80 }, 80, 'right', 96);
+  const coohPlan = planAcidicSalt(cooh, 'Na', { x: 220, y: 0 }, 80, 'right', 96);
+  assert.ok(ohPlan && coohPlan);
+  if (!ohPlan || !coohPlan) return;
+  const distanceOf = (plan: { cation: { position: { x: number; y: number } }; acidO: { x: number; y: number } }) =>
+    Math.hypot(plan.cation.position.x - plan.acidO.x, plan.cation.position.y - plan.acidO.y);
+  assert.equal(distanceOf(ohPlan), 96);
+  assert.equal(distanceOf(coohPlan), 96);
+  assert.equal(ohPlan.cation.position.y, ohPlan.acidO.y);
+  assert.equal(coohPlan.cation.position.y, coohPlan.acidO.y);
+});

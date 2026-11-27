@@ -84,7 +84,12 @@ import {
 } from '../../core/chemistry/chain';
 import { eraseAlongPath, findErasableAt, type EraserTargets } from '../../core/eraser';
 import { validateStructure, type ChemIssue } from '../../core/chemistry/valence';
-import { acidicGroupAtomAt, planAcidicSalt, saltMetalCharge } from '../../core/chemistry/salts';
+import {
+  acidOxygenAt,
+  acidicGroupAtomAt,
+  planAcidicSalt,
+  saltMetalCharge
+} from '../../core/chemistry/salts';
 import { buildRegionFill } from '../../core/regionRaster';
 import { splitStrokeAtSelfIntersection } from '../../core/brushSplit';
 import { viewRectForViewport } from '../../core/viewport';
@@ -3973,21 +3978,45 @@ export function CanvasStage() {
     if (!drag) {
       // 所有化学工具共用同一套悬停反馈：原子圈选 / 化学键描边。
       if (hoverHighlight && CHEM_HOVER_TOOLS.includes(activeTool)) {
-        const anchor = findBondAnchor(state.doc, point, 11 / state.viewport.zoom);
-        if (anchor) {
-          setBondHover({ kind: 'atom', point: anchor.point });
+        let metalAcidPoint: Vec | null = null;
+        if (activeTool === 'atom') {
+          const preset =
+            ATOM_PRESETS.find((item) => item.id === state.chem.atomPresetId) ?? ATOM_PRESETS[0];
+          if (saltMetalCharge(preset.element) !== null) {
+            const all = allObjects(state.doc);
+            const acid = acidicGroupAtomAt(
+              all.filter((obj): obj is AtomObject => obj.type === 'atom'),
+              all.filter((obj): obj is BondObject => obj.type === 'bond'),
+              point
+            );
+            if (acid) {
+              metalAcidPoint = acidOxygenAt(
+                acid,
+                all.filter((obj): obj is BondObject => obj.type === 'bond')
+              );
+            }
+          }
+        }
+        if (metalAcidPoint) {
+          // 金属工具与成键工具一致：圆形光标落在真正被替换的 O 上。
+          setBondHover({ kind: 'atom', point: metalAcidPoint });
         } else {
-          const hoveredBond = findBondAt(state.doc, point, 9 / state.viewport.zoom);
-          setBondHover(
-            hoveredBond
-              ? {
-                  kind: 'bond',
-                  bondId: hoveredBond.id,
-                  start: hoveredBond.start,
-                  end: hoveredBond.end
-                }
-              : null
-          );
+          const anchor = findBondAnchor(state.doc, point, 11 / state.viewport.zoom);
+          if (anchor) {
+            setBondHover({ kind: 'atom', point: anchor.point });
+          } else {
+            const hoveredBond = findBondAt(state.doc, point, 9 / state.viewport.zoom);
+            setBondHover(
+              hoveredBond
+                ? {
+                    kind: 'bond',
+                    bondId: hoveredBond.id,
+                    start: hoveredBond.start,
+                    end: hoveredBond.end
+                  }
+                : null
+            );
+          }
         }
       } else if (bondHover) {
         setBondHover(null);
