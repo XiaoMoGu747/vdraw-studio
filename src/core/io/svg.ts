@@ -24,7 +24,12 @@ import {
   strokeEraseMaskDef,
   strokeEraseMaskId
 } from '../eraseMask';
-import { ATOM_FONT_SIZE, atomParts } from '../chemistry/labels';
+import {
+  ATOM_FONT_SIZE,
+  atomLabelLayout,
+  atomParts,
+  type AtomLabelLayout
+} from '../chemistry/labels';
 import { chemBondShape } from '../chemistry/render';
 import { ringGeometry } from '../chemistry/ring-geometry';
 import { expandSelection } from '../scene';
@@ -157,9 +162,17 @@ function textToSvg(obj: TextObject): string {
   return `<text x="${x}" y="${obj.y}" font-family="${escapeXml(obj.fontFamily)}" font-size="${obj.fontSize}" font-weight="${obj.fontWeight}"${obj.italic ? ' font-style="italic"' : ''} letter-spacing="${obj.letterSpacing ?? 0}" text-anchor="${anchor}" dominant-baseline="hanging" fill="${solid(obj.style.fill)}" opacity="${obj.style.opacity}"${rotationTransform(obj)}>${spans}</text>`;
 }
 
-function atomToSvg(obj: AtomObject, implicitHydrogens = false, hideCharges = false): string {
+function atomToSvg(
+  obj: AtomObject,
+  implicitHydrogens = false,
+  hideCharges = false,
+  layout?: AtomLabelLayout
+): string {
   const parts = atomParts(obj, implicitHydrogens);
   const scale = parts.fontSize / ATOM_FONT_SIZE;
+  const dx = layout?.dx ?? 0;
+  const dy = layout?.dy ?? 0;
+  const chargeOnLeft = dx < -1;
   const color = solid(obj.style.fill) === 'none' ? '#1b1b1b' : solid(obj.style.fill);
   const dots: string[] = [];
   for (let i = 0; i < parts.lonePairs * 2; i += 1) {
@@ -172,10 +185,10 @@ function atomToSvg(obj: AtomObject, implicitHydrogens = false, hideCharges = fal
       `<circle cx="${parts.width / 2 + (3 + i * 3.4) * scale}" cy="${-9 * scale}" r="${1.2 * scale}" fill="${color}"/>`
     );
   }
-  return `<g transform="translate(${obj.position.x} ${obj.position.y})">
+  return `<g transform="translate(${obj.position.x + dx} ${obj.position.y + dy})">
     <text x="0" y="0" text-anchor="middle" dominant-baseline="central" font-family="Cambria, 'Times New Roman', serif" font-size="${parts.fontSize}" fill="${color}">${escapeXml(parts.main)}</text>
     ${parts.isotope ? `<text x="${-parts.width / 2 - 2 * scale}" y="${-7 * scale}" text-anchor="end" font-family="Cambria, serif" font-size="${9 * scale}" fill="${color}">${parts.isotope}</text>` : ''}
-    ${parts.charge && !hideCharges ? `<text x="${parts.width / 2 + 2 * scale}" y="${-7 * scale}" text-anchor="start" font-family="Cambria, serif" font-size="${9 * scale}" fill="${color}">${escapeXml(parts.charge)}</text>` : ''}
+    ${parts.charge && !hideCharges ? `<text x="${chargeOnLeft ? -parts.width / 2 - 2 * scale : parts.width / 2 + 2 * scale}" y="${-7 * scale}" text-anchor="${chargeOnLeft ? 'end' : 'start'}" font-family="Cambria, serif" font-size="${9 * scale}" fill="${color}">${escapeXml(parts.charge)}</text>` : ''}
     ${dots.join('')}
   </g>`;
 }
@@ -361,8 +374,13 @@ function objectToSvg(
         : '';
       return `<g opacity="${obj.style.opacity}">${lines}${polygons}${wavy}</g>`;
     }
-    case 'atom':
-      return atomToSvg(obj, doc.implicitHydrogens === true, hideCharges);
+    case 'atom': {
+      const bonds = doc.layers
+        .flatMap((layer) => layer.objects)
+        .filter((item): item is BondObject => item.type === 'bond');
+      const layout = atomLabelLayout(obj, bonds);
+      return atomToSvg(obj, doc.implicitHydrogens === true, hideCharges, layout);
+    }
     case 'arrow': {
       const geometry = buildArrowGeometry(obj.arrowKind, obj.start, obj.end);
       const stroke = solid(obj.style.stroke.paint) === 'none' ? '#1b1b1b' : solid(obj.style.stroke.paint);

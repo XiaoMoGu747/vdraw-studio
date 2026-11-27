@@ -84,7 +84,7 @@ import {
 } from '../../core/chemistry/chain';
 import { eraseAlongPath, findErasableAt, type EraserTargets } from '../../core/eraser';
 import { validateStructure, type ChemIssue } from '../../core/chemistry/valence';
-import { hydroxylAtomAt, planHydroxylSalt, saltMetalCharge } from '../../core/chemistry/salts';
+import { acidicGroupAtomAt, planAcidicSalt, saltMetalCharge } from '../../core/chemistry/salts';
 import { buildRegionFill } from '../../core/regionRaster';
 import { splitStrokeAtSelfIntersection } from '../../core/brushSplit';
 import { viewRectForViewport } from '../../core/viewport';
@@ -2378,43 +2378,40 @@ export function CanvasStage() {
     const anchor = findBondAnchor(state.doc, point, 12 / zoom);
     const anchorScale = chemAnchorScale(anchor);
 
-    // 金属元素点在羟基上：把 H 替换为金属阳离子，生成酚盐 / 磺酸盐。
+    // 金属元素点在酸性官能团上：把酸性 H 替换为金属阳离子，生成酚盐/羧酸盐/磺酸盐。
     if (saltMetalCharge(preset.element) !== null) {
-      const hydroxyl = hydroxylAtomAt(
-        allObjects(state.doc).filter((obj): obj is AtomObject => obj.type === 'atom'),
+      const all = allObjects(state.doc);
+      const acid = acidicGroupAtomAt(
+        all.filter((obj): obj is AtomObject => obj.type === 'atom'),
+        all.filter((obj): obj is BondObject => obj.type === 'bond'),
         point
       );
-      if (hydroxyl) {
-        const targetLayer = getLayerOfObject(state.doc, hydroxyl.id);
+      if (acid) {
+        const targetLayer = getLayerOfObject(state.doc, acid.id);
         if (!targetLayer || targetLayer.locked) {
           state.notify('该原子所在图层已锁定，无法替换', 'warn');
           return;
         }
-        const touching = allObjects(state.doc).filter(
+        const touching = all.filter(
           (obj): obj is BondObject =>
             obj.type === 'bond' &&
-            (Math.hypot(
-              obj.start.x - hydroxyl.position.x,
-              obj.start.y - hydroxyl.position.y
-            ) < 2.5 ||
-              Math.hypot(obj.end.x - hydroxyl.position.x, obj.end.y - hydroxyl.position.y) < 2.5)
+            (Math.hypot(obj.start.x - acid.position.x, obj.start.y - acid.position.y) < 2.5 ||
+              Math.hypot(obj.end.x - acid.position.x, obj.end.y - acid.position.y) < 2.5)
         );
         const bond = touching[0];
         const neighbor = bond
-          ? Math.hypot(
-              bond.start.x - hydroxyl.position.x,
-              bond.start.y - hydroxyl.position.y
-            ) <
-            Math.hypot(bond.end.x - hydroxyl.position.x, bond.end.y - hydroxyl.position.y)
+          ? Math.hypot(bond.start.x - acid.position.x, bond.start.y - acid.position.y) <
+            Math.hypot(bond.end.x - acid.position.x, bond.end.y - acid.position.y)
             ? bond.end
             : bond.start
           : null;
-        const plan = planHydroxylSalt(
-          hydroxyl,
+        const plan = planAcidicSalt(
+          acid,
           preset.element,
           neighbor,
           state.chemBondLength,
-          state.chemCationPlacement
+          state.chemCationPlacement,
+          state.chemSaltDistance
         );
         if (plan) {
           const cation = makeChemAtom(
@@ -2428,10 +2425,10 @@ export function CanvasStage() {
             1,
             plan.cation.fontSize
           );
-          let next = replaceObject(state.doc, hydroxyl.id, (obj) =>
-            obj.type === 'atom' ? { ...obj, label: plan.oxygenLabel } : obj
+          let next = replaceObject(state.doc, acid.id, (obj) =>
+            obj.type === 'atom' ? { ...obj, label: plan.acidLabel } : obj
           );
-          const groupId = anchor?.group?.id ?? hydroxyl.parentId ?? null;
+          const groupId = anchor?.group?.id ?? acid.parentId ?? null;
           const attached = groupId
             ? attachObjectsToGroup(next, groupId, [cation])
             : null;
@@ -2440,7 +2437,7 @@ export function CanvasStage() {
           state.setSelection([cation.id]);
           const chargeText = plan.cation.charge > 1 ? String(plan.cation.charge) : '';
           state.notify(
-            `已将羟基氢替换为 ${plan.cation.element}${chargeText}⁺`,
+            `已将酸性氢替换为 ${plan.cation.element}${chargeText}⁺`,
             'success'
           );
           return;

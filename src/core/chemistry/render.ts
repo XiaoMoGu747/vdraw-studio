@@ -1,13 +1,25 @@
 import type { BondObject, VDrawDocument, Vec } from '../../types/document';
-import { findAtomAt } from '../scene';
+import { allObjects, findAtomAtPosition } from '../scene';
 import { normalize, sub } from '../geometry';
-import { atomRadius } from './labels';
+import { atomBondClearance } from './labels';
 import { buildBondGeometry, type BondGeometry } from './bonds';
 
 export interface ChemBondShape {
   start: Vec;
   end: Vec;
   geometry: BondGeometry;
+}
+
+/** 同一份文档的键列表只收集一次；文档不可变，换文档自然失效。 */
+const bondsCache = new WeakMap<VDrawDocument, BondObject[]>();
+function bondsOf(doc: VDrawDocument): BondObject[] {
+  const cached = bondsCache.get(doc);
+  if (cached) return cached;
+  const bonds = allObjects(doc).filter(
+    (object): object is BondObject => object.type === 'bond'
+  );
+  bondsCache.set(doc, bonds);
+  return bonds;
 }
 
 /**
@@ -28,10 +40,11 @@ export function chemBondShape(doc: VDrawDocument, bond: BondObject): ChemBondSha
     };
   }
 
-  const startAtom = findAtomAt(doc, bond.start, 2.5);
-  const endAtom = findAtomAt(doc, bond.end, 2.5);
-  let startClearance = startAtom ? atomRadius(startAtom) : 0;
-  let endClearance = endAtom ? atomRadius(endAtom) : 0;
+  const startAtom = findAtomAtPosition(doc, bond.start, 2.5);
+  const endAtom = findAtomAtPosition(doc, bond.end, 2.5);
+  const bonds = bondsOf(doc);
+  let startClearance = startAtom ? atomBondClearance(startAtom, bonds) : 0;
+  let endClearance = endAtom ? atomBondClearance(endAtom, bonds) : 0;
   // 键本身比两个标签还短时退回不裁切，避免整根键被“吃”掉。
   if (total - startClearance - endClearance < 3) {
     startClearance = 0;

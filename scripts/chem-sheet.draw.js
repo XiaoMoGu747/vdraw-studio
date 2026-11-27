@@ -16,7 +16,7 @@ import {
   createTextObject,
   emptyAtomLabel
 } from '/src/core/factory.ts';
-import { atomParts } from '/src/core/chemistry/labels.ts';
+import { atomLabelLayout, atomParts } from '/src/core/chemistry/labels.ts';
 import { createDocument } from '/src/core/document.ts';
 
 export const CHEM_PARAMS = {
@@ -226,6 +226,7 @@ function contentBounds(objects) {
     maxX = Math.max(maxX, x);
     maxY = Math.max(maxY, y);
   };
+  const bonds = objects.filter((object) => object.type === 'bond');
   for (const object of objects) {
     if (object.type === 'bond') {
       const pad = CHEM_PARAMS.bondWidth / 2 + GAP;
@@ -233,10 +234,15 @@ function contentBounds(objects) {
       include(Math.max(object.start.x, object.end.x) + pad, Math.max(object.start.y, object.end.y) + pad);
     } else if (object.type === 'atom') {
       const parts = atomParts(object);
-      const halfWidth = Math.max(28, parts.width + 18) / 2 + 6;
-      const halfHeight = parts.fontSize * 0.62;
-      include(object.position.x - halfWidth, object.position.y - halfHeight);
-      include(object.position.x + halfWidth, object.position.y + halfHeight);
+      // 端基标签会沿键轴外移，包围盒必须跟随实际文字中心。
+      const layout = atomLabelLayout(object, bonds);
+      const chargePad = object.label.charge ? parts.fontSize * 0.34 : 0;
+      const width = Math.max(30, parts.width + parts.fontSize * 0.34 + chargePad);
+      const height = Math.max(30, parts.fontSize * 1.5);
+      const centerX = object.position.x + layout.dx;
+      const centerY = object.position.y + layout.dy;
+      include(centerX - width / 2, centerY - height / 2);
+      include(centerX + width / 2, centerY + height / 2);
     }
   }
   return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };

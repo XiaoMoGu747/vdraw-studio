@@ -233,8 +233,10 @@ interface Prefs {
   chemBondSpacing: number;
   /** 苯环/环上双键的内线键距（页面 px），与单独双键/三键独立。 */
   chemRingBondSpacing: number;
-  /** 成盐时金属阳离子的摆放：键轴延长线或 O 的右侧。 */
+  /** 成盐时金属阳离子的摆放：键轴延长线或垂直于键轴的侧向。 */
   chemCationPlacement: CationPlacement;
+  /** 成盐金属与酸根的最小距离（页面 px）；0 表示按键长自动计算。 */
+  chemSaltDistance: number;
   /** 隐藏原子标签上的正负电荷上标。 */
   chemHideCharges: boolean;
   /** 新建原子/元素标签的默认字号（px）。 */
@@ -304,6 +306,9 @@ export const CHEM_BOND_WIDTH_DEFAULT = 2.2;
 export const CHEM_BOND_SPACING_DEFAULT = 4.2;
 /** 环上双键内线默认键距；与单独双键/三键分开控制。 */
 export const CHEM_RING_BOND_SPACING_DEFAULT = 4.2;
+/** 成盐金属与酸根的默认距离：0 = 按键长与标签宽度自动计算。 */
+export const CHEM_SALT_DISTANCE_DEFAULT = 0;
+export const CHEM_SALT_DISTANCE_RANGE = { min: 0, max: 600 } as const;
 export const CHEM_ATOM_SIZE_DEFAULT = 16;
 /** 兼容旧命名：推荐值即默认值。 */
 export const CHEM_BOND_LENGTH_RECOMMENDED = CHEM_BOND_LENGTH_DEFAULT;
@@ -339,6 +344,7 @@ const DEFAULT_PREFS: Prefs = {
   chemBondSpacing: CHEM_BOND_SPACING_DEFAULT,
   chemRingBondSpacing: CHEM_RING_BOND_SPACING_DEFAULT,
   chemCationPlacement: 'axial',
+  chemSaltDistance: CHEM_SALT_DISTANCE_DEFAULT,
   chemHideCharges: false,
   chemAtomSize: CHEM_ATOM_SIZE_DEFAULT,
   chemBenzeneStyle: 'kekule',
@@ -472,6 +478,8 @@ interface AppState {
   chemRingBondSpacing: number;
   /** 成盐时金属阳离子的摆放方式。 */
   chemCationPlacement: CationPlacement;
+  /** 成盐金属与酸根的最小距离；0 = 自动。 */
+  chemSaltDistance: number;
   /** 是否隐藏原子标签上的电荷上标。 */
   chemHideCharges: boolean;
   /** 新建原子标签的默认字号（px）。 */
@@ -663,6 +671,8 @@ interface AppState {
   setChemRingBondSpacing: (spacing: number) => void;
   /** 设置成盐金属阳离子的摆放方式。 */
   setChemCationPlacement: (placement: CationPlacement) => void;
+  /** 设置成盐金属与酸根的最小距离；0 = 自动。 */
+  setChemSaltDistance: (distance: number) => void;
   /** 显示/隐藏原子标签上的正负电荷。 */
   setChemHideCharges: (hide: boolean) => void;
   setChemAtomSize: (size: number) => void;
@@ -872,6 +882,14 @@ function readPrefs(): Prefs {
         parsed.chemCationPlacement === 'right' || parsed.chemCationPlacement === 'axial'
           ? parsed.chemCationPlacement
           : DEFAULT_PREFS.chemCationPlacement,
+      chemSaltDistance:
+        typeof parsed.chemSaltDistance === 'number' && Number.isFinite(parsed.chemSaltDistance)
+          ? clamp(
+              parsed.chemSaltDistance,
+              CHEM_SALT_DISTANCE_RANGE.min,
+              CHEM_SALT_DISTANCE_RANGE.max
+            )
+          : DEFAULT_PREFS.chemSaltDistance,
       chemHideCharges:
         typeof parsed.chemHideCharges === 'boolean'
           ? parsed.chemHideCharges
@@ -998,6 +1016,7 @@ export const useAppStore = create<AppState>((set, get) => {
     chemBondSpacing: prefs.chemBondSpacing,
     chemRingBondSpacing: prefs.chemRingBondSpacing,
     chemCationPlacement: prefs.chemCationPlacement,
+    chemSaltDistance: prefs.chemSaltDistance,
     chemHideCharges: prefs.chemHideCharges,
     chemAtomSize: prefs.chemAtomSize,
     recent: readRecent(),
@@ -2057,6 +2076,16 @@ export const useAppStore = create<AppState>((set, get) => {
     setChemCationPlacement: (placement) => {
       set({ chemCationPlacement: placement });
       scheduleBrushPrefs({ chemCationPlacement: placement });
+    },
+
+    setChemSaltDistance: (distance) => {
+      const value = clamp(
+        Math.round(distance),
+        CHEM_SALT_DISTANCE_RANGE.min,
+        CHEM_SALT_DISTANCE_RANGE.max
+      );
+      set({ chemSaltDistance: value });
+      scheduleBrushPrefs({ chemSaltDistance: value });
     },
 
     setChemHideCharges: (hide) => {

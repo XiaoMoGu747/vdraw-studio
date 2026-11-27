@@ -11,6 +11,7 @@ import {
   CHEM_BOND_WIDTH_DEFAULT,
   CHEM_BOND_WIDTH_RANGE,
   CHEM_RING_BOND_SPACING_DEFAULT,
+  CHEM_SALT_DISTANCE_RANGE,
   useAppStore
 } from '../../store/useAppStore';
 import type { IconName } from '../../types/ui';
@@ -112,6 +113,7 @@ export function SettingsModal() {
   const chemBondSpacing = useAppStore((state) => state.chemBondSpacing);
   const chemRingBondSpacing = useAppStore((state) => state.chemRingBondSpacing);
   const chemCationPlacement = useAppStore((state) => state.chemCationPlacement);
+  const chemSaltDistance = useAppStore((state) => state.chemSaltDistance);
   const chemHideCharges = useAppStore((state) => state.chemHideCharges);
   const chemAtomSize = useAppStore((state) => state.chemAtomSize);
   const setChemBondMetric = useAppStore((state) => state.setChemBondMetric);
@@ -121,6 +123,7 @@ export function SettingsModal() {
   const setChemBondSpacing = useAppStore((state) => state.setChemBondSpacing);
   const setChemRingBondSpacing = useAppStore((state) => state.setChemRingBondSpacing);
   const setChemCationPlacement = useAppStore((state) => state.setChemCationPlacement);
+  const setChemSaltDistance = useAppStore((state) => state.setChemSaltDistance);
   const setChemHideCharges = useAppStore((state) => state.setChemHideCharges);
   const setChemAtomSize = useAppStore((state) => state.setChemAtomSize);
   const fileActions = useFileActions();
@@ -462,13 +465,13 @@ export function SettingsModal() {
               <div className="settings-field settings-field--stack">
                 <span>
                   <strong>成盐金属离子摆位</strong>
-                  <em>用 Na/Ca 等替换羟基氢时，金属阳离子放在 O 的键轴延长线或右侧</em>
+                  <em>用 Na/Ca 等替换酸性氢时，金属阳离子放在键轴延长线或垂直于键轴的侧向</em>
                 </span>
                 <div className="settings-segments" data-testid="settings-cation-placement">
                   {(
                     [
                       ['axial', '键轴延长线'],
-                      ['right', 'O 的右侧']
+                      ['right', '垂直于键轴']
                     ] as const
                   ).map(([value, label]) => (
                     <button
@@ -483,6 +486,27 @@ export function SettingsModal() {
                   ))}
                 </div>
               </div>
+              <label className="settings-field">
+                <span>
+                  <strong>成盐离子距离</strong>
+                  <em>
+                    金属到酸根的最小距离；0 = 自动。范围 {CHEM_SALT_DISTANCE_RANGE.min}–
+                    {CHEM_SALT_DISTANCE_RANGE.max}px，实际过近时会自动避让标签
+                  </em>
+                </span>
+                <div className="settings-range">
+                  <input
+                    type="range"
+                    min={CHEM_SALT_DISTANCE_RANGE.min}
+                    max={CHEM_SALT_DISTANCE_RANGE.max}
+                    step={5}
+                    value={chemSaltDistance}
+                    data-testid="settings-salt-distance"
+                    onChange={(event) => setChemSaltDistance(Number(event.target.value))}
+                  />
+                  <b>{chemSaltDistance === 0 ? '自动' : `${chemSaltDistance}px`}</b>
+                </div>
+              </label>
               <div className="settings-bond-tools">
                 <button
                   type="button"

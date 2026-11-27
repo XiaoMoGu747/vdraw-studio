@@ -1,10 +1,10 @@
-import type { AtomObject, Vec } from '../../types/document';
+import type { AtomObject, BondObject, Vec } from '../../types/document';
 import { normalize, sub } from '../geometry';
-import { atomParts } from './labels';
+import { atomLabelLayout, atomParts, terminalLabelShift } from './labels';
 
 /**
- * 能与羟基氢交换的金属及其常见阳离子电荷。
- * 只收录碱金属/碱土金属：它们与 O⁻ 形成离子对，而不是共价 O–M 键。
+ * 能与酸性氢交换的金属及其常见阳离子电荷。
+ * 只收录碱金属/碱土金属：它们与酸根形成离子对，而不是共价 O–M 键。
  */
 export const SALT_METALS: Record<string, number> = {
   Li: 1,
@@ -18,17 +18,47 @@ export function saltMetalCharge(element: string): number | null {
   return SALT_METALS[element] ?? null;
 }
 
-/** 成盐时金属阳离子的摆放方式：键轴延长线（原 H 方向）或 O 的右侧。 */
+/** 成盐时金属阳离子的摆放方式：键轴延长线，或垂直于键轴的侧向避让。 */
 export type CationPlacement = 'axial' | 'right';
 
-export function isHydroxylLabel(atom: AtomObject): boolean {
-  return atom.label.group === 'OH' || atom.label.group === 'HO';
+export interface AcidicGroupSpec {
+  /** 脱氢后的标签；null 表示直接显示元素符号（如酚氧 O⁻）。 */
+  group: string | null;
+  element: string;
 }
 
-export interface HydroxylSaltPlan {
-  /** 原羟基氧改成 O⁻，保留位置与字号。 */
-  oxygenLabel: AtomObject['label'];
-  /** 阳离子放在原来 H 的方向上，与 O 严格共线。 */
+/**
+ * 可被金属置换酸性氢的官能团。
+ * OH/HO 为酚/醇羟基；COOH 为羧酸；SO₃H 为磺酸。
+ */
+const ACIDIC_GROUPS: Record<string, AcidicGroupSpec> = {
+  OH: { group: null, element: 'O' },
+  HO: { group: null, element: 'O' },
+  COOH: { group: 'COO', element: 'C' },
+  'CO₂H': { group: 'CO₂', element: 'C' },
+  CO2H: { group: 'CO2', element: 'C' },
+  'SO₃H': { group: 'SO₃', element: 'S' },
+  SO3H: { group: 'SO3', element: 'S' },
+  // 已脱氢的酸根再次点金属时，只补阳离子，不破坏原有酸根标签。
+  'COO⁻': { group: 'COO', element: 'C' },
+  'COO-': { group: 'COO', element: 'C' },
+  'SO₃⁻': { group: 'SO₃', element: 'S' },
+  'SO3-': { group: 'SO3', element: 'S' }
+};
+
+export function acidicGroupSpec(atom: AtomObject): AcidicGroupSpec | null {
+  const group = atom.label.group;
+  return group ? ACIDIC_GROUPS[group] ?? null : null;
+}
+
+export function isAcidicGroupLabel(atom: AtomObject): boolean {
+  return acidicGroupSpec(atom) !== null;
+}
+
+export interface AcidicSaltPlan {
+  /** 脱氢后的酸根标签，保留位置与字号。 */
+  acidLabel: AtomObject['label'];
+  /** 金属阳离子的目标位置。 */
   cation: {
     element: string;
     position: Vec;
@@ -38,60 +68,111 @@ export interface HydroxylSaltPlan {
 }
 
 /**
- * 把“羟基上的 H”替换为金属阳离子：
- * - O 标签由 OH/HO 变为带 −1 电荷的 O；
- * - 金属可放在 O–取代基键的延长线上（原 H 方向），或放在 O 的右侧；
- * - 距离不小于一个键长，避免压住 O 标签；
- * - 不创建共价键，保持离子对的化学语义。
+ * 把酸性官能团上的 H 替换为金属阳离子：
+ * - OH/HO → O⁻；COOH → COO⁻；SO₃H → SO₃⁻；
+ * - 金属沿键轴延长线，或垂直于键轴的侧向摆放；
+ * - 左侧官能团自动把侧向金属放到左边，避免伸进苯环；
+ * - distance > 0 时作为最小金属–酸根距离，但仍会自动避让标签，避免重叠。
  */
-export function planHydroxylSalt(
+export function planAcidicSalt(
   atom: AtomObject,
   metal: string,
   neighbor: Vec | null,
   fallbackDistance: number,
-  placement: CationPlacement = 'axial'
-): HydroxylSaltPlan | null {
-  if (!isHydroxylLabel(atom)) return null;
+  placement: CationPlacement = 'axial',
+  distance = 0
+): AcidicSaltPlan | null {
+  const spec = acidicGroupSpec(atom);
+  if (!spec) return null;
   const charge = saltMetalCharge(metal);
   if (charge === null) return null;
 
   const fontSize = atom.label.fontSize ?? 16;
-  const oxygenWidth = atomParts(atom).width;
-  const cationLabel: AtomObject['label'] = {
+  const acidLabel: AtomObject['label'] = {
     ...atom.label,
-    element: metal,
-    group: null,
-    charge,
+    element: spec.element,
+    group: spec.group,
+    charge: -1,
     hydrogens: null
+  };
+  const acidAtom: AtomObject = { ...atom, label: acidLabel };
+  const acidParts = atomParts(acidAtom);
+  const acidWidth = Math.max(28, acidParts.width + acidParts.fontSize * 0.34);
+  const acidHeight = Math.max(30, acidParts.fontSize * 1.5);
+  const labelShift = neighbor
+    ? terminalLabelShift(atom.position, neighbor, acidParts.width, acidHeight)
+    : { x: 0, y: 0 };
+  const labelCenter = {
+    x: atom.position.x + labelShift.x,
+    y: atom.position.y + labelShift.y
+  };
+
+  const cationLabel: AtomObject['label'] = {
+    element: metal,
+    charge,
+    isotope: null,
+    radical: 'none',
+    lonePairs: 0,
+    hydrogens: null,
+    group: null,
+    fontSize
   };
   const cationWidth =
     atomParts({ ...atom, label: cationLabel }).width + (charge > 0 ? fontSize * 0.3 : 0);
+  const cationHalfWidth = cationWidth / 2;
+  const cationHalfHeight = fontSize * 0.6;
+  const gap = Math.max(6, fontSize * 0.3);
 
+  const side =
+    neighbor && atom.position.x < neighbor.x - 1 ? -1 : 1;
   const direction =
     placement === 'right'
-      ? { x: 1, y: 0 }
+      ? { x: side, y: 0 }
       : neighbor
         ? normalize(sub(atom.position, neighbor))
         : { x: 0, y: -1 };
+
+  const boxLeft = labelCenter.x - acidWidth / 2;
+  const boxRight = labelCenter.x + acidWidth / 2;
+  const boxTop = labelCenter.y - acidHeight / 2;
+  const boxBottom = labelCenter.y + acidHeight / 2;
+  let required = 0;
+  if (direction.x > 0.001) {
+    required = Math.max(
+      required,
+      (boxRight + cationHalfWidth + gap - atom.position.x) / direction.x
+    );
+  } else if (direction.x < -0.001) {
+    required = Math.max(
+      required,
+      (atom.position.x - boxLeft + cationHalfWidth + gap) / -direction.x
+    );
+  }
+  if (direction.y > 0.001) {
+    required = Math.max(
+      required,
+      (boxBottom + cationHalfHeight + gap - atom.position.y) / direction.y
+    );
+  } else if (direction.y < -0.001) {
+    required = Math.max(
+      required,
+      (atom.position.y - boxTop + cationHalfHeight + gap) / -direction.y
+    );
+  }
+
   const bondLength = neighbor
     ? Math.hypot(atom.position.x - neighbor.x, atom.position.y - neighbor.y)
     : fallbackDistance;
-  const clearance = oxygenWidth / 2 + cationWidth / 2 + Math.max(6, fontSize * 0.3);
-  const distance = Math.max(bondLength, clearance);
+  const minDistance = distance > 0 ? distance : bondLength;
+  const resolved = Math.max(minDistance, required);
 
   return {
-    oxygenLabel: {
-      ...atom.label,
-      element: 'O',
-      group: null,
-      charge: -1,
-      hydrogens: null
-    },
+    acidLabel,
     cation: {
       element: metal,
       position: {
-        x: atom.position.x + direction.x * distance,
-        y: atom.position.y + direction.y * distance
+        x: atom.position.x + direction.x * resolved,
+        y: atom.position.y + direction.y * resolved
       },
       charge,
       fontSize
@@ -99,16 +180,24 @@ export function planHydroxylSalt(
   };
 }
 
-/** 命中羟基标签的完整文字框（包括“OH”里的 H），供元素工具替换使用。 */
-export function hydroxylAtomAt(atoms: AtomObject[], point: Vec): AtomObject | null {
+/** 命中酸性官能团标签的完整文字框（包括 OH 里的 H、COOH/SO₃H 的整段文字）。 */
+export function acidicGroupAtomAt(
+  atoms: AtomObject[],
+  bonds: BondObject[],
+  point: Vec
+): AtomObject | null {
   for (const atom of atoms) {
-    if (!isHydroxylLabel(atom)) continue;
+    if (!isAcidicGroupLabel(atom)) continue;
     const parts = atomParts(atom);
-    const halfWidth = Math.max(28, parts.width + 18) / 2 + 4;
-    const halfHeight = parts.fontSize * 0.62 + 4;
+    const layout = atomLabelLayout(atom, bonds);
+    const chargePad = atom.label.charge ? parts.fontSize * 0.34 : 0;
+    const halfWidth = Math.max(28, parts.width + parts.fontSize * 0.34 + chargePad) / 2 + 4;
+    const halfHeight = Math.max(30, parts.fontSize * 1.5) / 2 + 4;
+    const centerX = atom.position.x + layout.dx;
+    const centerY = atom.position.y + layout.dy;
     if (
-      Math.abs(point.x - atom.position.x) <= halfWidth &&
-      Math.abs(point.y - atom.position.y) <= halfHeight
+      Math.abs(point.x - centerX) <= halfWidth &&
+      Math.abs(point.y - centerY) <= halfHeight
     ) {
       return atom;
     }

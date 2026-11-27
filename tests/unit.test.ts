@@ -39,8 +39,8 @@ import { chemBondShape } from '../src/core/chemistry/render';
 import { buildBondGeometry } from '../src/core/chemistry/bonds';
 import { ATOM_PRESETS } from '../src/core/chemistry/presets';
 import { maxValenceFor } from '../src/core/chemistry/electronic';
-import { hydroxylAtomAt, planHydroxylSalt } from '../src/core/chemistry/salts';
-import { atomRadius } from '../src/core/chemistry/labels';
+import { acidicGroupAtomAt, planAcidicSalt } from '../src/core/chemistry/salts';
+import { ATOM_LABEL_GAP, atomLabelLayout } from '../src/core/chemistry/labels';
 import { ringBondInnerSide } from '../src/core/chemistry/benzene';
 import {
   ImportError,
@@ -2057,7 +2057,6 @@ test('键型几何：平行线遇到元素标签时逐线止于标签边缘', ()
     ...emptyAtomLabel('O'),
     fontSize: 20
   });
-  const radius = atomRadius(oxygen);
 
   for (const type of ['double', 'triple'] as const) {
     const bond = createBondObject(
@@ -2067,16 +2066,19 @@ test('键型几何：平行线遇到元素标签时逐线止于标签边缘', ()
       { x: 100, y: 0 },
       type
     );
+    const layout = atomLabelLayout(oxygen, [bond]);
+    assert.equal(layout.terminal, true);
+    assert.ok(layout.dx > 0, '端基标签应沿键轴向外展开');
     const bondDoc = { ...doc, layers: [{ ...layer, objects: [bond, oxygen] }] };
     const shape = chemBondShape(bondDoc, bond);
     assert.equal(shape.geometry.segments.length, type === 'double' ? 2 : 3);
     for (const segment of shape.geometry.segments) {
-      // 起点无标签，应严格落在键端；终点应停在 O 标签圆周。
+      // 起点无标签，应严格落在键端；终点应停在标签近端固定间隙处。
       assert.ok(Math.abs(segment.x1) < 0.01, `${type} 起点偏移 ${segment.x1}`);
       const distanceToO = Math.hypot(segment.x2 - 100, segment.y2);
       assert.ok(
-        Math.abs(distanceToO - radius) < 0.05,
-        `${type} 终点距 O ${distanceToO.toFixed(3)}，标签半径 ${radius.toFixed(3)}`
+        Math.abs(distanceToO - ATOM_LABEL_GAP) < 0.05,
+        `${type} 终点距 O ${distanceToO.toFixed(3)}，应让出 ${ATOM_LABEL_GAP}px`
       );
     }
   }
@@ -2091,12 +2093,12 @@ test('成盐：Na/Ca 替换羟基氢，阳离子沿原 H 方向对齐', () => {
     fontSize: 20
   });
 
-  const sodium = planHydroxylSalt(oxygen, 'Na', { x: 0, y: 100 }, 40);
+  const sodium = planAcidicSalt(oxygen, 'Na', { x: 0, y: 100 }, 40);
   assert.ok(sodium);
   if (!sodium) return;
-  assert.equal(sodium.oxygenLabel.element, 'O');
-  assert.equal(sodium.oxygenLabel.group, null);
-  assert.equal(sodium.oxygenLabel.charge, -1);
+  assert.equal(sodium.acidLabel.element, 'O');
+  assert.equal(sodium.acidLabel.group, null);
+  assert.equal(sodium.acidLabel.charge, -1);
   assert.equal(sodium.cation.element, 'Na');
   assert.equal(sodium.cation.charge, 1);
   assert.ok(Math.abs(sodium.cation.position.x) < 0.001, '阳离子不能横向错位');
@@ -2106,16 +2108,16 @@ test('成盐：Na/Ca 替换羟基氢，阳离子沿原 H 方向对齐', () => {
     '阳离子与 O 至少相隔一个键长'
   );
 
-  const calcium = planHydroxylSalt(oxygen, 'Ca', { x: 0, y: 100 }, 40);
+  const calcium = planAcidicSalt(oxygen, 'Ca', { x: 0, y: 100 }, 40);
   assert.ok(calcium);
   if (!calcium) return;
   assert.equal(calcium.cation.charge, 2);
 
-  assert.equal(planHydroxylSalt(oxygen, 'Al', { x: 0, y: 100 }, 40), null, '铝不按碱金属成盐');
+  assert.equal(planAcidicSalt(oxygen, 'Al', { x: 0, y: 100 }, 40), null, '铝不按碱金属成盐');
   const ketone = { ...oxygen, label: { ...oxygen.label, group: null } };
-  assert.equal(planHydroxylSalt(ketone, 'Na', { x: 0, y: 100 }, 40), null);
+  assert.equal(planAcidicSalt(ketone, 'Na', { x: 0, y: 100 }, 40), null);
 
-  const hit = hydroxylAtomAt([oxygen], { x: 12, y: 0 });
+  const hit = acidicGroupAtomAt([oxygen], [], { x: 12, y: 0 });
   assert.equal(hit?.id, oxygen.id);
 });
 
@@ -2215,15 +2217,111 @@ test('成盐摆位：右侧模式让金属与 O 水平对齐', () => {
     group: 'OH',
     fontSize: 20
   });
-  const axial = planHydroxylSalt(oxygen, 'Na', { x: 0, y: 100 }, 40, 'axial');
+  const axial = planAcidicSalt(oxygen, 'Na', { x: 0, y: 100 }, 40, 'axial');
   assert.ok(axial);
   if (!axial) return;
   assert.ok(Math.abs(axial.cation.position.x) < 0.001);
   assert.ok(axial.cation.position.y < 0);
 
-  const right = planHydroxylSalt(oxygen, 'Na', { x: 0, y: 100 }, 40, 'right');
+  const right = planAcidicSalt(oxygen, 'Na', { x: 0, y: 100 }, 40, 'right');
   assert.ok(right);
   if (!right) return;
   assert.ok(right.cation.position.x > 0, '右侧模式应在 O 的右边');
   assert.ok(Math.abs(right.cation.position.y) < 0.001, '右侧模式应与 O 水平对齐');
+});
+
+test('成盐摆位：左侧羟基自动把侧向金属放到左边', () => {
+  const doc = createDocument('blank-landscape', '左侧成盐');
+  const layer = doc.layers[0];
+  const oxygen = createAtomObject(layer.id, DEFAULT_STYLE, { x: 0, y: 0 }, {
+    ...emptyAtomLabel('O'),
+    group: 'OH',
+    fontSize: 20
+  });
+  // 邻居在右侧 = 羟基在苯环左侧。
+  const left = planAcidicSalt(oxygen, 'Na', { x: 100, y: 0 }, 40, 'right');
+  assert.ok(left);
+  if (!left) return;
+  assert.ok(left.cation.position.x < 0, '左侧羟基的金属应放在左边');
+  assert.ok(Math.abs(left.cation.position.y) < 0.001);
+
+  // 邻居在下方 = 羟基在上侧，金属仍在右边。
+  const top = planAcidicSalt(oxygen, 'Na', { x: 0, y: 100 }, 40, 'right');
+  assert.ok(top);
+  if (!top) return;
+  assert.ok(top.cation.position.x > 0);
+});
+
+test('成盐距离：可手动放大金属与酸根的最小距离', () => {
+  const doc = createDocument('blank-landscape', '成盐距离');
+  const layer = doc.layers[0];
+  const oxygen = createAtomObject(layer.id, DEFAULT_STYLE, { x: 0, y: 0 }, {
+    ...emptyAtomLabel('O'),
+    group: 'OH',
+    fontSize: 20
+  });
+  const plan = planAcidicSalt(oxygen, 'Na', { x: 0, y: 100 }, 40, 'axial', 140);
+  assert.ok(plan);
+  if (!plan) return;
+  const distance = Math.hypot(
+    plan.cation.position.x - oxygen.position.x,
+    plan.cation.position.y - oxygen.position.y
+  );
+  assert.ok(Math.abs(distance - 140) < 0.01, `实际距离 ${distance}`);
+});
+
+test('成盐：COOH / SO₃H 也能脱氢上钠', () => {
+  const doc = createDocument('blank-landscape', '酸性官能团');
+  const layer = doc.layers[0];
+  const carboxyl = createAtomObject(layer.id, DEFAULT_STYLE, { x: 0, y: 0 }, {
+    ...emptyAtomLabel('C'),
+    group: 'COOH',
+    fontSize: 20
+  });
+  const carboxylPlan = planAcidicSalt(carboxyl, 'Na', { x: -40, y: 0 }, 40, 'right');
+  assert.ok(carboxylPlan);
+  if (!carboxylPlan) return;
+  assert.equal(carboxylPlan.acidLabel.group, 'COO');
+  assert.equal(carboxylPlan.acidLabel.charge, -1);
+
+  const sulfonic = createAtomObject(layer.id, DEFAULT_STYLE, { x: 200, y: 0 }, {
+    ...emptyAtomLabel('S'),
+    group: 'SO₃H',
+    fontSize: 20
+  });
+  const sulfonicPlan = planAcidicSalt(sulfonic, 'Ca', { x: 160, y: 0 }, 40, 'right');
+  assert.ok(sulfonicPlan);
+  if (!sulfonicPlan) return;
+  assert.equal(sulfonicPlan.acidLabel.group, 'SO₃');
+  assert.equal(sulfonicPlan.cation.charge, 2);
+});
+
+test('官能团键长：宽标签端基按固定间隙裁键，不再被压得过短', () => {
+  const doc = createDocument('blank-landscape', '官能团键长');
+  const layer = doc.layers[0];
+  const carboxyl = createAtomObject(layer.id, DEFAULT_STYLE, { x: 100, y: 0 }, {
+    ...emptyAtomLabel('C'),
+    group: 'COOH',
+    fontSize: 20
+  });
+  const bond = createBondObject(
+    layer.id,
+    DEFAULT_STYLE,
+    { x: 0, y: 0 },
+    { x: 100, y: 0 },
+    'single'
+  );
+  const layout = atomLabelLayout(carboxyl, [bond]);
+  assert.equal(layout.terminal, true);
+  assert.ok(layout.dx > 20, 'COOH 标签应沿键轴向外展开');
+  const bondDoc = { ...doc, layers: [{ ...layer, objects: [bond, carboxyl] }] };
+  const shape = chemBondShape(bondDoc, bond);
+  const visible = Math.hypot(
+    shape.geometry.segments[0].x2 - shape.geometry.segments[0].x1,
+    shape.geometry.segments[0].y2 - shape.geometry.segments[0].y1
+  );
+  assert.ok(
+    visible > 90,
+    `COOH 端基键可见长度 ${visible.toFixed(2)}，不应被标签宽度压短`
+  );
 });

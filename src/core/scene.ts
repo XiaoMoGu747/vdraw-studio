@@ -8,7 +8,7 @@ import type {
   Vec
 } from '../types/document';
 import { ringGeometry } from './chemistry/ring-geometry';
-import { atomParts } from './chemistry/labels';
+import { atomLabelLayout, atomParts } from './chemistry/labels';
 import { mapEraseHoles, mapEraseStrokes } from './eraseMask';
 
 export const TEXT_LINE_HEIGHT = 1.32;
@@ -118,15 +118,15 @@ const boundsCache = new WeakMap<SceneObject, Rect>();
 
 /**
  * 包围盒缓存：文档是不可变更新，对象引用不变时几何也不会变。
- * 编组依赖子对象，跳过缓存（子对象移动后编组引用不变）。
+ * 编组依赖子对象、原子标签依赖相连键的朝向，均跳过缓存。
  */
 export function getObjectBounds(obj: SceneObject, doc?: VDrawDocument): Rect {
-  if (obj.type !== 'group') {
+  if (obj.type !== 'group' && obj.type !== 'atom') {
     const cached = boundsCache.get(obj);
     if (cached) return cached;
   }
   const bounds = computeObjectBounds(obj, doc);
-  if (obj.type !== 'group') boundsCache.set(obj, bounds);
+  if (obj.type !== 'group' && obj.type !== 'atom') boundsCache.set(obj, bounds);
   return bounds;
 }
 
@@ -170,12 +170,20 @@ function computeObjectBounds(obj: SceneObject, doc?: VDrawDocument): Rect {
     case 'atom': {
       // 标签宽度随元素/基团变化，不能用固定 40×32，否则选择框、对齐和适应窗口都会失真。
       const parts = atomParts(obj);
+      const bonds: BondObject[] = doc
+        ? doc.layers
+            .flatMap((layer) => layer.objects)
+            .filter((item): item is BondObject => item.type === 'bond')
+        : [];
+      const layout = atomLabelLayout(obj, bonds);
+      const centerX = obj.position.x + layout.dx;
+      const centerY = obj.position.y + layout.dy;
       const chargePad = obj.label.charge ? parts.fontSize * 0.34 : 0;
       const width = Math.max(30, parts.width + parts.fontSize * 0.34 + chargePad);
       const height = Math.max(30, parts.fontSize * 1.5);
       return {
-        x: obj.position.x - width / 2,
-        y: obj.position.y - height / 2,
+        x: centerX - width / 2,
+        y: centerY - height / 2,
         width,
         height
       };
@@ -1153,7 +1161,8 @@ export function selectableObjects(doc: VDrawDocument): SceneObject[] {
   return allObjects(doc).filter((obj) => obj.type !== 'group' && !obj.parentId);
 }
 
-export function findAtomAt(
+/** 精确命中原子中心；化学键裁切必须用它，不能被邻近标签的大选框误吸。 */
+export function findAtomAtPosition(
   doc: VDrawDocument,
   point: Vec,
   tolerance = 1.5
@@ -1163,6 +1172,36 @@ export function findAtomAt(
     for (const obj of layer.objects) {
       if (obj.type !== 'atom') continue;
       if (Math.hypot(obj.position.x - point.x, obj.position.y - point.y) <= tolerance) {
+        return obj;
+      }
+    }
+  }
+  return null;
+}
+
+export function findAtomAt(
+  doc: VDrawDocument,
+  point: Vec,
+  tolerance = 1.5
+): AtomObject | null {
+  const bonds = allObjects(doc).filter(
+    (obj): obj is BondObject => obj.type === 'bond'
+  );
+  for (const layer of doc.layers) {
+    if (!layer.visible) continue;
+    for (const obj of layer.objects) {
+      if (obj.type !== 'atom') continue;
+      const parts = atomParts(obj);
+      const layout = atomLabelLayout(obj, bonds);
+      const centerX = obj.position.x + layout.dx;
+      const centerY = obj.position.y + layout.dy;
+      const chargePad = obj.label.charge ? parts.fontSize * 0.34 : 0;
+      const halfWidth = Math.max(28, parts.width + parts.fontSize * 0.34 + chargePad) / 2;
+      const halfHeight = Math.max(30, parts.fontSize * 1.5) / 2;
+      if (
+        Math.abs(point.x - centerX) <= halfWidth + tolerance &&
+        Math.abs(point.y - centerY) <= halfHeight + tolerance
+      ) {
         return obj;
       }
     }

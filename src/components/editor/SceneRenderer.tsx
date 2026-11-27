@@ -18,7 +18,7 @@ import type {
 import { buildArrowGeometry } from '../../core/arrow';
 import { benzeneGeometry } from '../../core/chemistry/benzene';
 import { chemistryPreviewIds } from '../../core/chemistry/preview';
-import { ATOM_FONT_SIZE, atomParts } from '../../core/chemistry/labels';
+import { ATOM_FONT_SIZE, atomLabelLayout, atomParts } from '../../core/chemistry/labels';
 import { chemBondShape } from '../../core/chemistry/render';
 import { pathData } from '../../core/io/svg';
 import {
@@ -481,6 +481,7 @@ export const SceneObjectView = memo(
       return (
         <AtomView
           object={object as AtomObject}
+          doc={doc}
           implicitHydrogens={doc.implicitHydrogens === true}
         />
       );
@@ -533,7 +534,10 @@ export const SceneObjectView = memo(
   (prev, next) =>
     prev.object === next.object &&
     prev.forceBuckets === next.forceBuckets &&
-    ((prev.object.type !== 'bond' && prev.object.type !== 'group') || prev.doc === next.doc)
+    ((prev.object.type !== 'bond' &&
+      prev.object.type !== 'group' &&
+      prev.object.type !== 'atom') ||
+      prev.doc === next.doc)
 );
 
 function BondView({ object, doc }: { object: BondObject; doc: VDrawDocument }) {
@@ -578,21 +582,33 @@ function BondView({ object, doc }: { object: BondObject; doc: VDrawDocument }) {
 
 function AtomView({
   object,
+  doc,
   implicitHydrogens
 }: {
   object: AtomObject;
+  doc: VDrawDocument;
   implicitHydrogens: boolean;
 }) {
   const hideCharges = useAppStore((state) => state.chemHideCharges);
   const parts = atomParts(object, implicitHydrogens);
+  const layout = useMemo(() => {
+    const bonds = doc.layers
+      .flatMap((layer) => layer.objects)
+      .filter((item): item is BondObject => item.type === 'bond');
+    return atomLabelLayout(object, bonds);
+  }, [object, doc]);
   const fontSize = parts.fontSize;
   const scale = fontSize / ATOM_FONT_SIZE;
+  const chargeOnLeft = layout.dx < -1;
   const color =
     object.style.fill.type === 'solid' && object.style.fill.color !== 'none'
       ? object.style.fill.color
       : '#1b1b1b';
   return (
-    <g transform={`translate(${object.position.x} ${object.position.y})`} opacity={object.style.opacity}>
+    <g
+      transform={`translate(${object.position.x + layout.dx} ${object.position.y + layout.dy})`}
+      opacity={object.style.opacity}
+    >
       <text
         textAnchor="middle"
         dominantBaseline="central"
@@ -616,9 +632,9 @@ function AtomView({
       ) : null}
       {parts.charge && !hideCharges ? (
         <text
-          x={parts.width / 2 + 2}
+          x={chargeOnLeft ? -parts.width / 2 - 2 : parts.width / 2 + 2}
           y={-fontSize * 0.44}
-          textAnchor="start"
+          textAnchor={chargeOnLeft ? 'end' : 'start'}
           fontFamily="Cambria, 'Times New Roman', serif"
           fontSize={fontSize * 0.56}
           fill={color}
