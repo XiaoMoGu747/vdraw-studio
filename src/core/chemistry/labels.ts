@@ -62,7 +62,8 @@ export function atomMainText(label: AtomLabelData, implicitHydrogens = false): s
   return label.element;
 }
 
-function groupTokens(text: string): string[] {
+/** 标签的原子 token；下标/电荷符号跟随前一个元素。 */
+export function atomLabelTokens(text: string): string[] {
   const tokens: string[] = [];
   for (const char of text) {
     if (/[A-Z]/.test(char) || tokens.length === 0) {
@@ -72,6 +73,10 @@ function groupTokens(text: string): string[] {
     }
   }
   return tokens;
+}
+
+function groupTokens(text: string): string[] {
+  return atomLabelTokens(text);
 }
 
 /** 与 KingDraw 一致：左侧取代基把标签按原子顺序掉转，使连接原子靠近键。 */

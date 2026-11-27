@@ -1,6 +1,13 @@
 import type { AtomObject, BondObject, Vec } from '../../types/document';
 import { normalize, sub } from '../geometry';
-import { atomLabelLayoutForNeighbor, atomParts, atomLabelLayout } from './labels';
+import {
+  atomLabelLayout,
+  atomLabelLayoutForNeighbor,
+  atomLabelTokens,
+  atomMainText,
+  measureLabelWidth,
+  type AtomLabelLayout
+} from './labels';
 
 /**
  * 能与酸性氢交换的金属及其常见阳离子电荷。
@@ -67,6 +74,34 @@ export interface AcidicSaltPlan {
   };
   /** 酸根中真正与金属相邻的连接原子位置。 */
   attach: Vec;
+  /** 羟基/羧基/磺酸基中带酸性 H 的 O 的字形中心（Na 距离以此为基准）。 */
+  acidO: Vec;
+}
+
+/**
+ * 从标签的 token 序列定位酸性 O 的字形中心。
+ * layout.attach 是键连接的 C/O（token 0），酸性 O 在其后若干个 token。
+ */
+function acidOxygenCenter(
+  atom: AtomObject,
+  text: string,
+  layout: AtomLabelLayout
+): Vec {
+  const tokens = atomLabelTokens(text);
+  let oxygenIndex = -1;
+  for (let index = 0; index < tokens.length; index += 1) {
+    if (tokens[index].startsWith('O')) oxygenIndex = index;
+  }
+  if (oxygenIndex <= 0) return { x: layout.attach.x, y: layout.attach.y };
+  const fontSize = atom.label.fontSize ?? 16;
+  const widths = tokens.map((token) => measureLabelWidth(token, fontSize));
+  let offset = 0;
+  for (let index = 0; index < oxygenIndex; index += 1) offset += widths[index];
+  offset += (widths[oxygenIndex] - widths[0]) / 2;
+  return {
+    x: layout.attach.x + (layout.flip ? -offset : offset),
+    y: layout.attach.y
+  };
 }
 
 /**
@@ -101,16 +136,17 @@ export function planAcidicSalt(
   // 以“脱氢后的酸根”计算标签锚点：键真正连接在 O / 羧基 C 的字形上。
   const layout = atomLabelLayoutForNeighbor(acidAtom, neighbor);
   const attach = layout.attach;
+  const acidO = acidOxygenCenter(acidAtom, atomMainText(acidLabel), layout);
 
-  const side = neighbor && attach.x < neighbor.x - 1 ? -1 : 1;
+  const side = neighbor && acidO.x < neighbor.x - 1 ? -1 : 1;
   const direction =
     placement === 'right'
       ? { x: side, y: 0 }
       : neighbor
-        ? normalize(sub(attach, neighbor))
+        ? normalize(sub(acidO, neighbor))
         : { x: 0, y: -1 };
 
-  // distance 就是金属中心到连接原子字形中心的距离；0 表示完全重叠。
+  // distance 就是金属中心到酸性 O 字形中心的距离；0 表示完全重叠。
   const resolved = distance;
 
   return {
@@ -118,14 +154,23 @@ export function planAcidicSalt(
     cation: {
       element: metal,
       position: {
-        x: attach.x + direction.x * resolved,
-        y: attach.y + direction.y * resolved
+        x: acidO.x + direction.x * resolved,
+        y: acidO.y + direction.y * resolved
       },
       charge,
       fontSize
     },
-    attach
+    attach,
+    acidO
   };
+}
+
+/** 当前酸性官能团中带 H 的 O 的字形中心；用于光标提示与验证。 */
+export function acidOxygenAt(atom: AtomObject, bonds: BondObject[]): Vec | null {
+  const isAnion = atom.label.element === 'O' && atom.label.charge === -1;
+  if (!isAcidicGroupLabel(atom) && !isAnion) return null;
+  const layout = atomLabelLayout(atom, bonds);
+  return acidOxygenCenter(atom, atomMainText(atom.label), layout);
 }
 
 /** 命中酸性官能团标签的完整文字框（包括 OH 里的 H、COOH/SO₃H 的整段文字）。 */
@@ -137,16 +182,16 @@ export function acidicGroupAtomAt(
   for (const atom of atoms) {
     if (!isAcidicGroupLabel(atom)) continue;
     const layout = atomLabelLayout(atom, bonds);
-    const parts = atomParts(atom, false, layout.flip);
-    const chargePad = atom.label.charge ? parts.fontSize * 0.34 : 0;
-    const halfWidth = Math.max(28, parts.width + parts.fontSize * 0.34 + chargePad) / 2 + 4;
-    const halfHeight = Math.max(30, parts.fontSize * 1.5) / 2 + 4;
-    const centerX = atom.position.x + layout.dx;
-    const centerY = atom.position.y + layout.dy;
+    const text = atomMainText(atom.label);
+    const oxygenToken =
+      atomLabelTokens(text).find((token) => token.startsWith('O')) ?? 'O';
+    const acidO = acidOxygenCenter(atom, text, layout);
+    const fontSize = atom.label.fontSize ?? 16;
+    const halfWidth = Math.max(14, measureLabelWidth(oxygenToken, fontSize) / 2 + 10);
+    const halfHeight = Math.max(18, fontSize * 0.6 + 10);
     if (
-      (Math.abs(point.x - centerX) <= halfWidth &&
-        Math.abs(point.y - centerY) <= halfHeight) ||
-      Math.hypot(point.x - atom.position.x, point.y - atom.position.y) <= 14
+      Math.abs(point.x - acidO.x) <= halfWidth &&
+      Math.abs(point.y - acidO.y) <= halfHeight
     ) {
       return atom;
     }

@@ -2443,6 +2443,8 @@ export function CanvasStage() {
           return;
         }
       }
+      state.notify('请点击 OH / COOH / SO₃H 中的 O 原子', 'info');
+      return;
     }
 
     // 官能团（OH / NH₂ / COOH…）与氢原子作为取代基挂接，绝不替换环骨架原子

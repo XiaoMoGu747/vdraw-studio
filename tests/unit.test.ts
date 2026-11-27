@@ -38,7 +38,7 @@ import { exportMol, exportSmiles } from '../src/core/io/chemExport';
 import { chemBondShape } from '../src/core/chemistry/render';
 import { buildBondGeometry } from '../src/core/chemistry/bonds';
 import { ATOM_PRESETS } from '../src/core/chemistry/presets';
-import { maxValenceFor } from '../src/core/chemistry/electronic';
+import { bondingState, maxValenceFor } from '../src/core/chemistry/electronic';
 import { acidicGroupAtomAt, planAcidicSalt } from '../src/core/chemistry/salts';
 import { ATOM_LABEL_GAP, atomLabelLayout, atomParts, flipGroupText } from '../src/core/chemistry/labels';
 import { ringBondInnerSide } from '../src/core/chemistry/benzene';
@@ -2365,4 +2365,33 @@ test('KingDraw 式标签锚点：左置官能团翻转且连接原子贴近键',
   assert.ok(layout.dx < 0, '左置标签应整体位于键的左侧');
   assert.equal(atomParts(carboxyl, false, layout.flip).main, 'HOOC');
   assert.ok(layout.attach.x < 0, '连接原子 C 应在原子位置左侧靠近键');
+});
+
+test('成盐距离以酸性 O 字形中心为基准，而非键连接的 C', () => {
+  const doc = createDocument('blank-landscape', '酸性 O 距离');
+  const layer = doc.layers[0];
+  const carboxyl = createAtomObject(layer.id, DEFAULT_STYLE, { x: 0, y: 0 }, {
+    ...emptyAtomLabel('C'),
+    group: 'COOH',
+    fontSize: 20
+  });
+  const plan = planAcidicSalt(carboxyl, 'Na', { x: -40, y: 0 }, 40, 'right', 100);
+  assert.ok(plan);
+  if (!plan) return;
+  assert.ok(plan.acidO.x > plan.attach.x, 'COOH 的酸性 O 应在连接 C 的右侧');
+  assert.equal(plan.cation.position.x, plan.acidO.x + 100);
+  assert.equal(plan.cation.position.y, plan.acidO.y);
+});
+
+test('芳香环外接原子不应额外计入环 π 电子', () => {
+  const doc = createDocument('blank-landscape', '环外π');
+  const layer = doc.layers[0];
+  const bond = createBondObject(layer.id, DEFAULT_STYLE, { x: 0, y: 0 }, { x: 40, y: 0 }, 'single');
+  const substituent = bondingState([bond], 0, 0, true, new Set());
+  assert.equal(substituent.pi, 0);
+  assert.equal(substituent.used, 1);
+
+  const ringBond = { ...bond, bondType: 'double' as const };
+  const ringAtom = bondingState([ringBond], 0, 0, true, new Set([ringBond.id]));
+  assert.equal(ringAtom.pi, 1);
 });

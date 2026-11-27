@@ -122,8 +122,12 @@ export function bondingState(
 ): BondingState {
   const sigma = bonds.length + hydrogens;
   const orbitals = sigma + lonePairs;
-  // 芳香环的离域 π 体系对每个环原子折算为 1 个 π 电子
-  let pi = aromatic ? 1 : 0;
+  // 芳香 π 只属于真正成环的原子；环外取代基（OH / Na⁺ 等）不能额外计一个 π。
+  const ringBondCount = bonds.reduce(
+    (count, bond) => count + (ringBondIds.has(bond.id) ? 1 : 0),
+    0
+  );
+  let pi = aromatic && ringBondCount > 0 ? 1 : 0;
   for (const bond of bonds) {
     if (aromatic && ringBondIds.has(bond.id)) continue;
     pi += Math.max(0, bondOrderOf(bond) - 1);

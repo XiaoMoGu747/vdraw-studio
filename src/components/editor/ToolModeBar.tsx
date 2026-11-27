@@ -28,6 +28,7 @@ import {
   CHEM_BOND_WIDTH_DEFAULT,
   CHEM_BOND_WIDTH_RANGE,
   CHEM_RING_BOND_SPACING_DEFAULT,
+  CHEM_SALT_DISTANCE_RANGE,
   useAppStore
 } from '../../store/useAppStore';
 import { Icon } from '../ui/Icon';
@@ -256,6 +257,8 @@ export function ToolModeBar() {
   const ringBondSpacing = useAppStore((state) => state.chemRingBondSpacing);
   const setRingBondSpacing = useAppStore((state) => state.setChemRingBondSpacing);
   const atomSize = useAppStore((state) => state.chemAtomSize);
+  const saltDistance = useAppStore((state) => state.chemSaltDistance);
+  const setChemSaltDistance = useAppStore((state) => state.setChemSaltDistance);
   const setChemBondMetric = useAppStore((state) => state.setChemBondMetric);
   const resetChemBondMetrics = useAppStore((state) => state.resetChemBondMetrics);
   const symmetry = useAppStore((state) => state.symmetry);
@@ -842,7 +845,7 @@ export function ToolModeBar() {
               />
               <ChemMetricInput
                 testId="chem-atom-size"
-                label="元素"
+                label="元素大小"
                 title={`新增原子/元素标签的字号（${CHEM_ATOM_SIZE_RANGE.min}–${CHEM_ATOM_SIZE_RANGE.max}px）；与键长等参数等比联动`}
                 value={atomSize}
                 decimals={0}
@@ -850,6 +853,17 @@ export function ToolModeBar() {
                 max={CHEM_ATOM_SIZE_RANGE.max}
                 step={1}
                 onCommit={(value) => setChemBondMetric('atomSize', value)}
+              />
+              <ChemMetricInput
+                testId="chem-salt-distance"
+                label="成盐距离"
+                title={`酸性 O 与 Na/Ca 等金属的距离（${CHEM_SALT_DISTANCE_RANGE.min}–${CHEM_SALT_DISTANCE_RANGE.max}px）；0 = 与 O 重叠`}
+                value={saltDistance}
+                decimals={0}
+                min={CHEM_SALT_DISTANCE_RANGE.min}
+                max={CHEM_SALT_DISTANCE_RANGE.max}
+                step={5}
+                onCommit={(value) => setChemSaltDistance(value)}
               />
               <span className="mode-dock__divider" />
               <button
