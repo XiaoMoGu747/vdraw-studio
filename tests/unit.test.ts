@@ -36,6 +36,11 @@ import { grainBudgetIds } from '../src/core/grainBudget';
 import { regionWidthForOutputWidth, safeRasterScale } from '../src/core/io/raster';
 import { exportMol, exportSmiles } from '../src/core/io/chemExport';
 import { chemBondShape } from '../src/core/chemistry/render';
+import { buildBondGeometry } from '../src/core/chemistry/bonds';
+import { ATOM_PRESETS } from '../src/core/chemistry/presets';
+import { maxValenceFor } from '../src/core/chemistry/electronic';
+import { hydroxylAtomAt, planHydroxylSalt } from '../src/core/chemistry/salts';
+import { atomRadius } from '../src/core/chemistry/labels';
 import {
   ImportError,
   detectImportFormat,
@@ -1649,11 +1654,11 @@ test('缩放：双键/三键间距与苯环内圈随缩放比例同步', () => {
   assert.equal(scaledDouble.scale, 2);
   const doubleDoc = { ...doc, layers: [{ ...layer, objects: [scaledDouble] }] };
   const doubleShape = chemBondShape(doubleDoc, scaledDouble);
-  const doubleOffsets = doubleShape.geometry.segments
-    .slice(1)
-    .map((segment) => Math.abs(segment.y1 - 100));
-  assert.ok(doubleOffsets.length > 0);
-  assert.ok(doubleOffsets.every((offset) => Math.abs(offset - 8.4) < 0.01));
+  const doubleOffsets = doubleShape.geometry.segments.map((segment) => segment.y1 - 100);
+  assert.equal(doubleOffsets.length, 2);
+  // 单独双键：两条线对称分布，各自距键轴半个键距。
+  assert.ok(doubleOffsets.some((offset) => Math.abs(offset - 4.2) < 0.01));
+  assert.ok(doubleOffsets.some((offset) => Math.abs(offset + 4.2) < 0.01));
 
   const tripleBond = createBondObject(
     layer.id,
@@ -1666,10 +1671,13 @@ test('缩放：双键/三键间距与苯环内圈随缩放比例同步', () => {
   const tripleDoc = { ...doc, layers: [{ ...layer, objects: [scaledTriple] }] };
   const tripleShape = chemBondShape(tripleDoc, scaledTriple);
   const tripleOffsets = tripleShape.geometry.segments
-    .slice(1)
-    .map((segment) => Math.abs(segment.y1 - 100));
-  assert.equal(tripleOffsets.length, 2);
-  assert.ok(tripleOffsets.every((offset) => Math.abs(offset - 6.3) < 0.01));
+    .map((segment) => segment.y1 - 100)
+    .sort((a, b) => a - b);
+  // 单独三键：三条等长线，中间一条在键轴上。
+  assert.equal(tripleOffsets.length, 3);
+  assert.ok(Math.abs(tripleOffsets[0] + 6.3) < 0.01);
+  assert.ok(Math.abs(tripleOffsets[1]) < 0.01);
+  assert.ok(Math.abs(tripleOffsets[2] - 6.3) < 0.01);
 
   // 苯环编组：内圈半径与子键间距都跟随整体缩放。
   const ringGroup = {
@@ -1693,7 +1701,7 @@ test('缩放：双键/三键间距与苯环内圈随缩放比例同步', () => {
     ]),
     ringStyle: 'pauling' as const
   };
-  const child = { ...childBond, parentId: parent.id };
+  const child = { ...childBond, parentId: parent.id, ringInnerSide: 1 as const };
   const groupedDoc = {
     ...doc,
     layers: [{ ...layer, objects: [parent, child] }]
@@ -1942,11 +1950,10 @@ test('化学参数：自定义键距进入渲染，缩放后的结构可推导�
   };
   const bondDoc = { ...doc, layers: [{ ...layer, objects: [bond] }] };
   const shape = chemBondShape(bondDoc, bond);
-  const offsets = shape.geometry.segments
-    .slice(1)
-    .map((segment) => Math.abs(segment.y1 - 100));
-  assert.ok(offsets.length > 0);
-  assert.ok(offsets.every((offset) => Math.abs(offset - 12) < 0.01));
+  const offsets = shape.geometry.segments.map((segment) => segment.y1 - 100);
+  assert.equal(offsets.length, 2);
+  assert.ok(offsets.some((offset) => Math.abs(offset - 6) < 0.01));
+  assert.ok(offsets.some((offset) => Math.abs(offset + 6) < 0.01));
 
   // 已缩放链：相连键的 scale 与原子字号都能告诉新增对象该继承多少。
   const atom = {
@@ -1997,4 +2004,130 @@ test('化学参数：自定义键距进入渲染，缩放后的结构可推导�
   // SVG 导出必须使用原子实际字号，而不是写死默认字号。
   const atomSvg = documentToSvgString(atomOnlyDoc, { includeBackground: false });
   assert.match(atomSvg, /font-size="32"/);
+});
+
+test('键型几何：单独双键/三键等长，环内双键保留内缩线', () => {
+  const double = buildBondGeometry('double', { x: 0, y: 0 }, { x: 100, y: 0 }, { spacing: 8 });
+  assert.equal(double.segments.length, 2);
+  const doubleLengths = double.segments.map((segment) =>
+    Math.hypot(segment.x2 - segment.x1, segment.y2 - segment.y1)
+  );
+  assert.ok(doubleLengths.every((length) => Math.abs(length - 100) < 0.01));
+  const doubleOffsets = double.segments.map((segment) => segment.y1).sort((a, b) => a - b);
+  assert.ok(Math.abs(doubleOffsets[0] + 4) < 0.01);
+  assert.ok(Math.abs(doubleOffsets[1] - 4) < 0.01);
+
+  const triple = buildBondGeometry('triple', { x: 0, y: 0 }, { x: 100, y: 0 }, { spacing: 8 });
+  assert.equal(triple.segments.length, 3);
+  const tripleLengths = triple.segments.map((segment) =>
+    Math.hypot(segment.x2 - segment.x1, segment.y2 - segment.y1)
+  );
+  assert.ok(tripleLengths.every((length) => Math.abs(length - 100) < 0.01));
+  const tripleOffsets = triple.segments.map((segment) => segment.y1).sort((a, b) => a - b);
+  assert.ok(Math.abs(tripleOffsets[0] + 8) < 0.01);
+  assert.ok(Math.abs(tripleOffsets[1]) < 0.01);
+  assert.ok(Math.abs(tripleOffsets[2] - 8) < 0.01);
+
+  // 环内双键必须保留“完整外线 + 内缩内线”，不能套用单独双键的对称等长线。
+  const ring = buildBondGeometry(
+    'double',
+    { x: 0, y: 0 },
+    { x: 100, y: 0 },
+    { spacing: 8, innerSide: 1 }
+  );
+  assert.equal(ring.segments.length, 2);
+  const outerLength = Math.hypot(
+    ring.segments[0].x2 - ring.segments[0].x1,
+    ring.segments[0].y2 - ring.segments[0].y1
+  );
+  const innerLength = Math.hypot(
+    ring.segments[1].x2 - ring.segments[1].x1,
+    ring.segments[1].y2 - ring.segments[1].y1
+  );
+  assert.ok(innerLength < outerLength - 1);
+  assert.ok(Math.abs(Math.abs(ring.segments[1].y1) - 8) < 0.01);
+});
+
+test('键型几何：平行线遇到元素标签时逐线止于标签边缘', () => {
+  const doc = createDocument('blank-landscape', '标签裁切');
+  const layer = doc.layers[0];
+  const oxygen = createAtomObject(layer.id, DEFAULT_STYLE, { x: 100, y: 0 }, {
+    ...emptyAtomLabel('O'),
+    fontSize: 20
+  });
+  const radius = atomRadius(oxygen);
+
+  for (const type of ['double', 'triple'] as const) {
+    const bond = createBondObject(
+      layer.id,
+      DEFAULT_STYLE,
+      { x: 0, y: 0 },
+      { x: 100, y: 0 },
+      type
+    );
+    const bondDoc = { ...doc, layers: [{ ...layer, objects: [bond, oxygen] }] };
+    const shape = chemBondShape(bondDoc, bond);
+    assert.equal(shape.geometry.segments.length, type === 'double' ? 2 : 3);
+    for (const segment of shape.geometry.segments) {
+      // 起点无标签，应严格落在键端；终点应停在 O 标签圆周。
+      assert.ok(Math.abs(segment.x1) < 0.01, `${type} 起点偏移 ${segment.x1}`);
+      const distanceToO = Math.hypot(segment.x2 - 100, segment.y2);
+      assert.ok(
+        Math.abs(distanceToO - radius) < 0.05,
+        `${type} 终点距 O ${distanceToO.toFixed(3)}，标签半径 ${radius.toFixed(3)}`
+      );
+    }
+  }
+});
+
+test('成盐：Na/Ca 替换羟基氢，阳离子沿原 H 方向对齐', () => {
+  const doc = createDocument('blank-landscape', '成盐');
+  const layer = doc.layers[0];
+  const oxygen = createAtomObject(layer.id, DEFAULT_STYLE, { x: 0, y: 0 }, {
+    ...emptyAtomLabel('O'),
+    group: 'OH',
+    fontSize: 20
+  });
+
+  const sodium = planHydroxylSalt(oxygen, 'Na', { x: 0, y: 100 }, 40);
+  assert.ok(sodium);
+  if (!sodium) return;
+  assert.equal(sodium.oxygenLabel.element, 'O');
+  assert.equal(sodium.oxygenLabel.group, null);
+  assert.equal(sodium.oxygenLabel.charge, -1);
+  assert.equal(sodium.cation.element, 'Na');
+  assert.equal(sodium.cation.charge, 1);
+  assert.ok(Math.abs(sodium.cation.position.x) < 0.001, '阳离子不能横向错位');
+  assert.ok(sodium.cation.position.y < 0, '阳离子应落在原 H 方向');
+  assert.ok(
+    Math.hypot(sodium.cation.position.x, sodium.cation.position.y) >= 40 - 0.001,
+    '阳离子与 O 至少相隔一个键长'
+  );
+
+  const calcium = planHydroxylSalt(oxygen, 'Ca', { x: 0, y: 100 }, 40);
+  assert.ok(calcium);
+  if (!calcium) return;
+  assert.equal(calcium.cation.charge, 2);
+
+  assert.equal(planHydroxylSalt(oxygen, 'Al', { x: 0, y: 100 }, 40), null, '铝不按碱金属成盐');
+  const ketone = { ...oxygen, label: { ...oxygen.label, group: null } };
+  assert.equal(planHydroxylSalt(ketone, 'Na', { x: 0, y: 100 }, 40), null);
+
+  const hit = hydroxylAtomAt([oxygen], { x: 12, y: 0 });
+  assert.equal(hit?.id, oxygen.id);
+});
+
+test('元素库：钠/钙可选，金属价态按阳离子计', () => {
+  for (const element of ['Li', 'Na', 'K', 'Mg', 'Ca', 'Al']) {
+    assert.ok(
+      ATOM_PRESETS.some((preset) => preset.kind === 'element' && preset.element === element),
+      `元素库缺少 ${element}`
+    );
+  }
+  assert.equal(maxValenceFor('Na', 0), 1);
+  assert.equal(maxValenceFor('Na', 1), 0);
+  assert.equal(maxValenceFor('K', 1), 0);
+  assert.equal(maxValenceFor('Ca', 0), 2);
+  assert.equal(maxValenceFor('Ca', 2), 0);
+  assert.equal(maxValenceFor('Mg', 2), 0);
 });

@@ -27,6 +27,7 @@ import {
   CHEM_BOND_SPACING_RANGE,
   CHEM_BOND_WIDTH_DEFAULT,
   CHEM_BOND_WIDTH_RANGE,
+  CHEM_RING_BOND_SPACING_DEFAULT,
   useAppStore
 } from '../../store/useAppStore';
 import { Icon } from '../ui/Icon';
@@ -252,6 +253,8 @@ export function ToolModeBar() {
   const bondLength = useAppStore((state) => state.chemBondLength);
   const bondWidth = useAppStore((state) => state.chemBondWidth);
   const bondSpacing = useAppStore((state) => state.chemBondSpacing);
+  const ringBondSpacing = useAppStore((state) => state.chemRingBondSpacing);
+  const setRingBondSpacing = useAppStore((state) => state.setChemRingBondSpacing);
   const atomSize = useAppStore((state) => state.chemAtomSize);
   const setChemBondMetric = useAppStore((state) => state.setChemBondMetric);
   const resetChemBondMetrics = useAppStore((state) => state.resetChemBondMetrics);
@@ -538,7 +541,7 @@ export function ToolModeBar() {
                 {preset.name}
               </button>
             ))}
-            {/* 键长/键宽/键距统一由一级横栏控制；这里只保留“固定化学键”。 */}
+            {/* 键长/键宽/键距/环键距统一由一级横栏控制；这里只保留“固定化学键”。 */}
             <span
               className="chem-subpanel__foot"
               role="group"
@@ -551,7 +554,7 @@ export function ToolModeBar() {
                 aria-pressed={chem.bondFixed}
                 title={
                   chem.bondFixed
-                    ? `已固定：新键严格使用 ${Math.round(bondLength)}px / ${bondWidth.toFixed(1)}px / ${bondSpacing.toFixed(1)}px，仅方向与摆放可调`
+                    ? `已固定：新键严格使用 ${Math.round(bondLength)}px / ${bondWidth.toFixed(1)}px / 键距 ${bondSpacing.toFixed(1)}px / 环键距 ${ringBondSpacing.toFixed(1)}px，仅方向与摆放可调`
                     : '固定化学键：开启后绘制新键只改变方向与摆放，严格使用键长 / 键宽 / 键距'
                 }
                 onClick={() => {
@@ -577,7 +580,7 @@ export function ToolModeBar() {
       return (
         <>
           <header className="chem-subpanel__head">{close}</header>
-          {/* 元素 12 项排 6 列 2 行；官能团 21 项排 7 列 3 行。 */}
+          {/* 元素 18 项排 6 列 3 行；官能团 21 项排 7 列 3 行。 */}
           <div
             className={`chem-subpanel__body${
               id === 'element' ? ' chem-subpanel__body--6' : ' chem-subpanel__body--7'
@@ -777,8 +780,8 @@ export function ToolModeBar() {
                 aria-pressed={chem.bondUniform}
                 title={
                   chem.bondUniform
-                    ? '等比联动：修改键长 / 键宽 / 键距任一参数，另外两项按同一倍率调整'
-                    : '独立参数：键长 / 键宽 / 键距分别调整'
+                    ? '等比联动：修改键长 / 键宽 / 单独键距任一参数，其余两项按同一倍率调整；环键距独立控制'
+                    : '独立参数：键长 / 键宽 / 单独键距 / 环键距分别调整'
                 }
                 onClick={() => setChemDefaults({ bondUniform: !chem.bondUniform })}
               >
@@ -788,7 +791,7 @@ export function ToolModeBar() {
                 type="button"
                 className="chem-metric-reset"
                 data-testid="chem-bond-defaults"
-                title={`恢复默认：键长 ${CHEM_BOND_LENGTH_DEFAULT} / 键宽 ${CHEM_BOND_WIDTH_DEFAULT} / 键距 ${CHEM_BOND_SPACING_DEFAULT} / 元素 ${CHEM_ATOM_SIZE_DEFAULT}`}
+                title={`恢复默认：键长 ${CHEM_BOND_LENGTH_DEFAULT} / 键宽 ${CHEM_BOND_WIDTH_DEFAULT} / 键距 ${CHEM_BOND_SPACING_DEFAULT} / 环键距 ${CHEM_RING_BOND_SPACING_DEFAULT} / 元素 ${CHEM_ATOM_SIZE_DEFAULT}`}
                 onClick={resetChemBondMetrics}
               >
                 <Icon name="undo" size={13} />
@@ -818,13 +821,24 @@ export function ToolModeBar() {
               <ChemMetricInput
                 testId="chem-bond-spacing"
                 label="键距"
-                title={`双键 / 三键键距（${CHEM_BOND_SPACING_RANGE.min}–${CHEM_BOND_SPACING_RANGE.max}px）；后续新建结构使用`}
+                title={`单独双键 / 三键的平行线间距（${CHEM_BOND_SPACING_RANGE.min}–${CHEM_BOND_SPACING_RANGE.max}px）；后续新建结构使用`}
                 value={bondSpacing}
                 decimals={1}
                 min={CHEM_BOND_SPACING_RANGE.min}
                 max={CHEM_BOND_SPACING_RANGE.max}
                 step={0.1}
                 onCommit={(value) => setChemBondMetric('spacing', value)}
+              />
+              <ChemMetricInput
+                testId="chem-ring-bond-spacing"
+                label="环键距"
+                title={`苯环 / 环上双键的内线间距（${CHEM_BOND_SPACING_RANGE.min}–${CHEM_BOND_SPACING_RANGE.max}px）；与单独双键/三键独立，后续新建环使用`}
+                value={ringBondSpacing}
+                decimals={1}
+                min={CHEM_BOND_SPACING_RANGE.min}
+                max={CHEM_BOND_SPACING_RANGE.max}
+                step={0.1}
+                onCommit={(value) => setRingBondSpacing(value)}
               />
               <ChemMetricInput
                 testId="chem-atom-size"

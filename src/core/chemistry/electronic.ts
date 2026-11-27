@@ -24,12 +24,31 @@ const ELEMENTS: Record<string, ElementProfile> = {
   N: { symbol: 'N', period: 2, valenceElectrons: 5 },
   O: { symbol: 'O', period: 2, valenceElectrons: 6 },
   F: { symbol: 'F', period: 2, valenceElectrons: 7 },
+  Li: { symbol: 'Li', period: 2, valenceElectrons: 1 },
   Si: { symbol: 'Si', period: 3, valenceElectrons: 4, expandedValences: [4] },
   P: { symbol: 'P', period: 3, valenceElectrons: 5, expandedValences: [3, 5] },
   S: { symbol: 'S', period: 3, valenceElectrons: 6, expandedValences: [2, 4, 6] },
+  Na: { symbol: 'Na', period: 3, valenceElectrons: 1 },
+  Mg: { symbol: 'Mg', period: 3, valenceElectrons: 2 },
+  Al: { symbol: 'Al', period: 3, valenceElectrons: 3 },
   Cl: { symbol: 'Cl', period: 3, valenceElectrons: 7, expandedValences: [1, 3, 5, 7] },
+  K: { symbol: 'K', period: 4, valenceElectrons: 1 },
+  Ca: { symbol: 'Ca', period: 4, valenceElectrons: 2 },
   Br: { symbol: 'Br', period: 4, valenceElectrons: 7, expandedValences: [1, 3, 5, 7] },
   I: { symbol: 'I', period: 5, valenceElectrons: 7, expandedValences: [1, 3, 5, 7] }
+};
+
+/**
+ * 常见金属的成键价：碱金属 1、碱土金属 2、铝 3。
+ * 金属阳离子的正电荷会占用价电子，因此可再成键数按电荷递减。
+ */
+const METAL_VALENCE: Record<string, number> = {
+  Li: 1,
+  Na: 1,
+  K: 1,
+  Mg: 2,
+  Ca: 2,
+  Al: 3
 };
 
 export function elementProfile(element: string): ElementProfile | null {
@@ -59,6 +78,11 @@ export function octetCapacity(element: string, charge = 0): number | null {
  * 第三周期以后允许表列扩展价态。
  */
 export function maxValenceFor(element: string, charge = 0): number | null {
+  const metal = METAL_VALENCE[element];
+  if (metal !== undefined) {
+    // 金属按常见阳离子价态计：Na⁺/K⁺/Li⁺ 为 0，Ca²⁺/Mg²⁺ 为 0，Al³⁺ 为 0。
+    return Math.max(0, metal - Math.max(0, charge));
+  }
   const profile = elementProfile(element);
   if (!profile) return element === 'C' ? 4 : null;
   const octet = octetCapacity(element, charge);

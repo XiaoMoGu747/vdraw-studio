@@ -19,10 +19,17 @@ import {
 import { atomParts } from '/src/core/chemistry/labels.ts';
 import { createDocument } from '/src/core/document.ts';
 
-export const CHEM_PARAMS = { bondLength: 91, bondWidth: 5, bondGap: 20, atomFont: 55 };
+export const CHEM_PARAMS = {
+  bondLength: 91,
+  bondWidth: 5,
+  bondGap: 20,
+  ringBondGap: 20,
+  atomFont: 55
+};
 
 const L = CHEM_PARAMS.bondLength;
 const GAP = CHEM_PARAMS.bondGap;
+const RING_GAP = CHEM_PARAMS.ringBondGap;
 const FONT = CHEM_PARAMS.atomFont;
 /** 正六边形中心到边的垂距（apothem），也是相邻稠环环心的半距。 */
 const H = (L * Math.sqrt(3)) / 2;
@@ -112,15 +119,23 @@ class Sheet {
 
   bond(a, b, type = 'single', sideRef = null) {
     let innerSide;
-    if (type === 'double' && sideRef) {
+    let ringLike = false;
+    if (sideRef) {
       const direction = unit(sub(b, a));
       const normal = { x: -direction.y, y: direction.x };
       const center = mid(a, b);
-      innerSide =
-        normal.x * (sideRef.x - center.x) + normal.y * (sideRef.y - center.y) >= 0 ? 1 : -1;
+      const offset = Math.abs(
+        normal.x * (sideRef.x - center.x) + normal.y * (sideRef.y - center.y)
+      );
+      // 环心明显偏离键轴才算环内键；端子双键的 sideRef 与键轴共线，按单独双键绘制。
+      ringLike = offset > 1;
+      if (type === 'double' && ringLike) {
+        innerSide =
+          normal.x * (sideRef.x - center.x) + normal.y * (sideRef.y - center.y) >= 0 ? 1 : -1;
+      }
     }
     const bond = createBondObject(this.layerId, BOND_STYLE, a, b, type, undefined);
-    bond.spacing = GAP;
+    bond.spacing = ringLike ? RING_GAP : GAP;
     bond.scale = 1;
     bond.ringInnerSide = innerSide;
     this.objects.push(bond);
@@ -572,6 +587,7 @@ export function drawSheet() {
   state.setChemBondLength(CHEM_PARAMS.bondLength);
   state.setChemBondWidth(CHEM_PARAMS.bondWidth);
   state.setChemBondSpacing(CHEM_PARAMS.bondGap);
+  state.setChemRingBondSpacing(CHEM_PARAMS.ringBondGap);
   state.setChemAtomSize(CHEM_PARAMS.atomFont);
 
   const page = { width: 3400, height: 3700 };

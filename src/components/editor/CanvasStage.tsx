@@ -84,6 +84,7 @@ import {
 } from '../../core/chemistry/chain';
 import { eraseAlongPath, findErasableAt, type EraserTargets } from '../../core/eraser';
 import { validateStructure, type ChemIssue } from '../../core/chemistry/valence';
+import { hydroxylAtomAt, planHydroxylSalt, saltMetalCharge } from '../../core/chemistry/salts';
 import { buildRegionFill } from '../../core/regionRaster';
 import { splitStrokeAtSelfIntersection } from '../../core/brushSplit';
 import { viewRectForViewport } from '../../core/viewport';
@@ -187,6 +188,7 @@ const MAX_BRUSH_SAMPLES = 24000;
 /**
  * 新建化学键：把设置里的键距写进对象，并记录继承自所在结构/锚点的缩放倍率。
  * 旧对象没有 spacing，渲染层按 4.2 兼容。
+ * spacing 显式传入时用于环上双键（与单独双键/三键分开控制）。
  */
 function makeChemBond(
   layerId: string,
@@ -194,13 +196,14 @@ function makeChemBond(
   end: Vec,
   bondType: BondObject['bondType'],
   scale = 1,
-  aromaticSide?: 1 | -1
+  aromaticSide?: 1 | -1,
+  spacing?: number
 ): BondObject {
   const state = useAppStore.getState();
   return {
     ...createBondObject(layerId, chemBondStyle(), start, end, bondType, aromaticSide),
     scale,
-    spacing: state.chemBondSpacing
+    spacing: spacing ?? state.chemBondSpacing
   };
 }
 
@@ -2355,6 +2358,75 @@ export function CanvasStage() {
     const anchor = findBondAnchor(state.doc, point, 12 / zoom);
     const anchorScale = chemAnchorScale(anchor);
 
+    // 金属元素点在羟基上：把 H 替换为金属阳离子，生成酚盐 / 磺酸盐。
+    if (saltMetalCharge(preset.element) !== null) {
+      const hydroxyl = hydroxylAtomAt(
+        allObjects(state.doc).filter((obj): obj is AtomObject => obj.type === 'atom'),
+        point
+      );
+      if (hydroxyl) {
+        const targetLayer = getLayerOfObject(state.doc, hydroxyl.id);
+        if (!targetLayer || targetLayer.locked) {
+          state.notify('该原子所在图层已锁定，无法替换', 'warn');
+          return;
+        }
+        const touching = allObjects(state.doc).filter(
+          (obj): obj is BondObject =>
+            obj.type === 'bond' &&
+            (Math.hypot(
+              obj.start.x - hydroxyl.position.x,
+              obj.start.y - hydroxyl.position.y
+            ) < 2.5 ||
+              Math.hypot(obj.end.x - hydroxyl.position.x, obj.end.y - hydroxyl.position.y) < 2.5)
+        );
+        const bond = touching[0];
+        const neighbor = bond
+          ? Math.hypot(
+              bond.start.x - hydroxyl.position.x,
+              bond.start.y - hydroxyl.position.y
+            ) <
+            Math.hypot(bond.end.x - hydroxyl.position.x, bond.end.y - hydroxyl.position.y)
+            ? bond.end
+            : bond.start
+          : null;
+        const plan = planHydroxylSalt(
+          hydroxyl,
+          preset.element,
+          neighbor,
+          state.chemBondLength
+        );
+        if (plan) {
+          const cation = makeChemAtom(
+            targetLayer.id,
+            plan.cation.position,
+            {
+              ...emptyAtomLabel(plan.cation.element),
+              charge: plan.cation.charge,
+              hydrogens: null
+            },
+            1,
+            plan.cation.fontSize
+          );
+          let next = replaceObject(state.doc, hydroxyl.id, (obj) =>
+            obj.type === 'atom' ? { ...obj, label: plan.oxygenLabel } : obj
+          );
+          const groupId = anchor?.group?.id ?? hydroxyl.parentId ?? null;
+          const attached = groupId
+            ? attachObjectsToGroup(next, groupId, [cation])
+            : null;
+          next = attached ?? addObjectsToLayer(next, targetLayer.id, [cation]);
+          state.updateDoc(next, true);
+          state.setSelection([cation.id]);
+          const chargeText = plan.cation.charge > 1 ? String(plan.cation.charge) : '';
+          state.notify(
+            `已将羟基氢替换为 ${plan.cation.element}${chargeText}⁺`,
+            'success'
+          );
+          return;
+        }
+      }
+    }
+
     // 官能团（OH / NH₂ / COOH…）与氢原子作为取代基挂接，绝不替换环骨架原子
     if ((preset.kind === 'group' || preset.element === 'H') && anchor) {
       if (anchor.atom && anchor.atom.label.group === preset.display) {
@@ -2532,6 +2604,7 @@ export function CanvasStage() {
     const isBenzene = template.id === 'benzene';
     const benzeneStyle = state.chem.benzeneStyle;
     const overrideTypes = isBenzene ? benzeneBondTypes(benzeneStyle) : null;
+    const ringSpacing = state.chemRingBondSpacing;
     const baseGroup = createGroupObject(layer.id, template.name, { x: 0, y: 0, width: 0, height: 0 }, []);
     const group: GroupObject = {
       ...baseGroup,
@@ -2558,10 +2631,12 @@ export function CanvasStage() {
           end,
           bondType,
           1,
-          isBenzene ? undefined : side
+          isBenzene ? undefined : side,
+          ringSpacing
         ),
         parentId: group.id,
-        ringInnerSide: isBenzene && bondType === 'double' ? side : undefined
+        // 任何环模板内的双键都按“环内线”绘制：外线完整、内线朝环心。
+        ringInnerSide: bondType === 'double' ? side : undefined
       });
     });
     template.atoms.forEach((atom, index) => {
@@ -2654,6 +2729,7 @@ export function CanvasStage() {
     const state = useAppStore.getState();
     const template = RING_TEMPLATES.find((item) => item.id === 'benzene');
     const layer = getLayerOfObject(state.doc, fused.root.id);
+    const ringSpacing = state.chemRingBondSpacing;
     if (!template) return;
     if (!layer || layer.locked) {
       state.notify('当前图层已锁定，无法插入环系', 'warn');
@@ -2688,7 +2764,7 @@ export function CanvasStage() {
           : -1;
       const bondType = bondTypes[index];
       newChildren.push({
-        ...makeChemBond(layer.id, start, end, bondType, 1),
+        ...makeChemBond(layer.id, start, end, bondType, 1, undefined, ringSpacing),
         parentId: '',
         ringInnerSide: bondType === 'double' ? side : undefined
       });

@@ -228,8 +228,10 @@ interface Prefs {
   chemBondLength: number;
   /** 化学键键宽。 */
   chemBondWidth: number;
-  /** 双键/三键键距（页面 px）。 */
+  /** 单独双键/三键的平行线键距（页面 px）。 */
   chemBondSpacing: number;
+  /** 苯环/环上双键的内线键距（页面 px），与单独双键/三键独立。 */
+  chemRingBondSpacing: number;
   /** 新建原子/元素标签的默认字号（px）。 */
   chemAtomSize: number;
   chemBenzeneStyle: 'pauling' | 'kekule';
@@ -295,11 +297,14 @@ export type UiDensity = 'compact' | 'standard' | 'comfortable';
 export const CHEM_BOND_LENGTH_DEFAULT = 40;
 export const CHEM_BOND_WIDTH_DEFAULT = 2.2;
 export const CHEM_BOND_SPACING_DEFAULT = 4.2;
+/** 环上双键内线默认键距；与单独双键/三键分开控制。 */
+export const CHEM_RING_BOND_SPACING_DEFAULT = 4.2;
 export const CHEM_ATOM_SIZE_DEFAULT = 16;
 /** 兼容旧命名：推荐值即默认值。 */
 export const CHEM_BOND_LENGTH_RECOMMENDED = CHEM_BOND_LENGTH_DEFAULT;
 export const CHEM_BOND_WIDTH_RECOMMENDED = CHEM_BOND_WIDTH_DEFAULT;
 export const CHEM_BOND_SPACING_RECOMMENDED = CHEM_BOND_SPACING_DEFAULT;
+export const CHEM_RING_BOND_SPACING_RECOMMENDED = CHEM_RING_BOND_SPACING_DEFAULT;
 /** 参数范围：按结构式绘图需要大幅放宽，设置面板与顶栏共用。 */
 export const CHEM_BOND_LENGTH_RANGE = { min: 8, max: 400 } as const;
 export const CHEM_BOND_WIDTH_RANGE = { min: 0.2, max: 40 } as const;
@@ -327,6 +332,7 @@ const DEFAULT_PREFS: Prefs = {
   chemBondLength: CHEM_BOND_LENGTH_DEFAULT,
   chemBondWidth: CHEM_BOND_WIDTH_DEFAULT,
   chemBondSpacing: CHEM_BOND_SPACING_DEFAULT,
+  chemRingBondSpacing: CHEM_RING_BOND_SPACING_DEFAULT,
   chemAtomSize: CHEM_ATOM_SIZE_DEFAULT,
   chemBenzeneStyle: 'kekule',
   showToolLabels: false,
@@ -455,6 +461,8 @@ interface AppState {
   chemBondWidth: number;
   /** 新建双键/三键的平行线间距。 */
   chemBondSpacing: number;
+  /** 新建苯环/环上双键的内线间距。 */
+  chemRingBondSpacing: number;
   /** 新建原子标签的默认字号（px）。 */
   chemAtomSize: number;
   recent: RecentEntry[];
@@ -634,12 +642,14 @@ interface AppState {
     key: 'length' | 'width' | 'spacing' | 'atomSize',
     value: number
   ) => void;
-  /** 恢复化学参数默认值（40 / 2.2 / 4.2 / 16）。 */
+  /** 恢复化学参数默认值（40 / 2.2 / 4.2 / 4.2 / 16）。 */
   resetChemBondMetrics: () => void;
   /** 只改某一项，不影响另外两项（用于单项“默认”按钮/兼容旧入口）。 */
   setChemBondLength: (length: number) => void;
   setChemBondWidth: (width: number) => void;
   setChemBondSpacing: (spacing: number) => void;
+  /** 只改环上双键的内线间距，不影响单独双键/三键。 */
+  setChemRingBondSpacing: (spacing: number) => void;
   setChemAtomSize: (size: number) => void;
   /** 在对象列表内复制单个对象（含编组子对象），并选中新副本。 */
   duplicateObject: (id: string) => void;
@@ -834,6 +844,15 @@ function readPrefs(): Prefs {
         typeof parsed.chemBondSpacing === 'number' && Number.isFinite(parsed.chemBondSpacing)
           ? clamp(parsed.chemBondSpacing, CHEM_BOND_SPACING_RANGE.min, CHEM_BOND_SPACING_RANGE.max)
           : DEFAULT_PREFS.chemBondSpacing,
+      chemRingBondSpacing:
+        typeof parsed.chemRingBondSpacing === 'number' &&
+        Number.isFinite(parsed.chemRingBondSpacing)
+          ? clamp(
+              parsed.chemRingBondSpacing,
+              CHEM_BOND_SPACING_RANGE.min,
+              CHEM_BOND_SPACING_RANGE.max
+            )
+          : DEFAULT_PREFS.chemRingBondSpacing,
       chemAtomSize:
         typeof parsed.chemAtomSize === 'number' && Number.isFinite(parsed.chemAtomSize)
           ? clamp(parsed.chemAtomSize, CHEM_ATOM_SIZE_RANGE.min, CHEM_ATOM_SIZE_RANGE.max)
@@ -954,6 +973,7 @@ export const useAppStore = create<AppState>((set, get) => {
     chemBondLength: prefs.chemBondLength,
     chemBondWidth: prefs.chemBondWidth,
     chemBondSpacing: prefs.chemBondSpacing,
+    chemRingBondSpacing: prefs.chemRingBondSpacing,
     chemAtomSize: prefs.chemAtomSize,
     recent: readRecent(),
     customTemplates: prefs.customTemplates,
@@ -1965,12 +1985,14 @@ export const useAppStore = create<AppState>((set, get) => {
         chemBondLength: CHEM_BOND_LENGTH_DEFAULT,
         chemBondWidth: CHEM_BOND_WIDTH_DEFAULT,
         chemBondSpacing: CHEM_BOND_SPACING_DEFAULT,
+        chemRingBondSpacing: CHEM_RING_BOND_SPACING_DEFAULT,
         chemAtomSize: CHEM_ATOM_SIZE_DEFAULT
       });
       scheduleBrushPrefs({
         chemBondLength: CHEM_BOND_LENGTH_DEFAULT,
         chemBondWidth: CHEM_BOND_WIDTH_DEFAULT,
         chemBondSpacing: CHEM_BOND_SPACING_DEFAULT,
+        chemRingBondSpacing: CHEM_RING_BOND_SPACING_DEFAULT,
         chemAtomSize: CHEM_ATOM_SIZE_DEFAULT
       });
     },
@@ -1995,6 +2017,16 @@ export const useAppStore = create<AppState>((set, get) => {
       );
       set({ chemBondSpacing: value });
       scheduleBrushPrefs({ chemBondSpacing: value });
+    },
+
+    setChemRingBondSpacing: (spacing) => {
+      const value = clamp(
+        Math.round(spacing * 10) / 10,
+        CHEM_BOND_SPACING_RANGE.min,
+        CHEM_BOND_SPACING_RANGE.max
+      );
+      set({ chemRingBondSpacing: value });
+      scheduleBrushPrefs({ chemRingBondSpacing: value });
     },
 
     setChemAtomSize: (size) => {

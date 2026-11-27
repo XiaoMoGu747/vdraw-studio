@@ -179,6 +179,7 @@ try {
     state.setChemBondLength(91);
     state.setChemBondWidth(5);
     state.setChemBondSpacing(20);
+    state.setChemRingBondSpacing(20);
     state.setChemAtomSize(55);
     state.setChem({ ringTemplateId: 'benzene', benzeneStyle: 'kekule' });
     state.setTool('ring');

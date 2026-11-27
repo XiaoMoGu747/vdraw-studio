@@ -10,6 +10,7 @@ import {
   CHEM_BOND_SPACING_RANGE,
   CHEM_BOND_WIDTH_DEFAULT,
   CHEM_BOND_WIDTH_RANGE,
+  CHEM_RING_BOND_SPACING_DEFAULT,
   useAppStore
 } from '../../store/useAppStore';
 import type { IconName } from '../../types/ui';
@@ -109,12 +110,14 @@ export function SettingsModal() {
   const chemBondLength = useAppStore((state) => state.chemBondLength);
   const chemBondWidth = useAppStore((state) => state.chemBondWidth);
   const chemBondSpacing = useAppStore((state) => state.chemBondSpacing);
+  const chemRingBondSpacing = useAppStore((state) => state.chemRingBondSpacing);
   const chemAtomSize = useAppStore((state) => state.chemAtomSize);
   const setChemBondMetric = useAppStore((state) => state.setChemBondMetric);
   const resetChemBondMetrics = useAppStore((state) => state.resetChemBondMetrics);
   const setChemBondLength = useAppStore((state) => state.setChemBondLength);
   const setChemBondWidth = useAppStore((state) => state.setChemBondWidth);
   const setChemBondSpacing = useAppStore((state) => state.setChemBondSpacing);
+  const setChemRingBondSpacing = useAppStore((state) => state.setChemRingBondSpacing);
   const setChemAtomSize = useAppStore((state) => state.setChemAtomSize);
   const fileActions = useFileActions();
   const [tab, setTab] = useState<SettingsTab>('interface');
@@ -469,7 +472,8 @@ export function SettingsModal() {
                   onClick={resetChemBondMetrics}
                 >
                   恢复默认 {CHEM_BOND_LENGTH_DEFAULT} / {CHEM_BOND_WIDTH_DEFAULT} /{' '}
-                  {CHEM_BOND_SPACING_DEFAULT} / {CHEM_ATOM_SIZE_DEFAULT}
+                  {CHEM_BOND_SPACING_DEFAULT} / {CHEM_RING_BOND_SPACING_DEFAULT} /{' '}
+                  {CHEM_ATOM_SIZE_DEFAULT}
                 </button>
               </div>
               <label className="settings-field">
@@ -542,7 +546,7 @@ export function SettingsModal() {
                 <span>
                   <strong>化学键键距</strong>
                   <em>
-                    双键 / 三键与芳香内线的平行线间距；范围 {CHEM_BOND_SPACING_RANGE.min}–
+                    单独双键 / 三键的平行线间距；范围 {CHEM_BOND_SPACING_RANGE.min}–
                     {CHEM_BOND_SPACING_RANGE.max}px，默认 {CHEM_BOND_SPACING_DEFAULT.toFixed(1)}px
                   </em>
                 </span>
@@ -568,6 +572,42 @@ export function SettingsModal() {
                     onClick={() => setChemBondSpacing(CHEM_BOND_SPACING_DEFAULT)}
                   >
                     默认 {CHEM_BOND_SPACING_DEFAULT.toFixed(1)}px
+                  </button>
+                </div>
+              </label>
+              <label className="settings-field">
+                <span>
+                  <strong>环上双键键距</strong>
+                  <em>
+                    苯环 / 环上双键的内线间距，与单独双键/三键独立；范围{' '}
+                    {CHEM_BOND_SPACING_RANGE.min}–{CHEM_BOND_SPACING_RANGE.max}px，默认{' '}
+                    {CHEM_RING_BOND_SPACING_DEFAULT.toFixed(1)}px
+                  </em>
+                </span>
+                <div className="settings-range">
+                  <input
+                    type="range"
+                    min={CHEM_BOND_SPACING_RANGE.min}
+                    max={CHEM_BOND_SPACING_RANGE.max}
+                    step={0.1}
+                    value={chemRingBondSpacing}
+                    data-testid="settings-ring-bond-spacing"
+                    onChange={(event) => setChemRingBondSpacing(Number(event.target.value))}
+                  />
+                  <b>{chemRingBondSpacing.toFixed(1)}px</b>
+                  <button
+                    type="button"
+                    className="settings-range__reset"
+                    data-testid="settings-ring-bond-spacing-reset"
+                    disabled={
+                      Math.abs(chemRingBondSpacing - CHEM_RING_BOND_SPACING_DEFAULT) < 0.01
+                    }
+                    title={`恢复默认环键距 ${CHEM_RING_BOND_SPACING_DEFAULT.toFixed(1)}px`}
+                    onClick={() =>
+                      setChemRingBondSpacing(CHEM_RING_BOND_SPACING_DEFAULT)
+                    }
+                  >
+                    默认 {CHEM_RING_BOND_SPACING_DEFAULT.toFixed(1)}px
                   </button>
                 </div>
               </label>
