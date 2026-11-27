@@ -5264,8 +5264,16 @@ export function CanvasStage() {
       if (!bond || bond.type !== 'bond') return;
       const parent = bond.parentId ? getObject(state.doc, bond.parentId) : null;
       if (parent && parent.type === 'group' && parent.ringStyle) {
-        state.notify('环内键的键级由环样式统一控制', 'info');
-        return;
+        // 只锁定真正的环内键；苯环上的取代基键仍可切换键级。
+        const groupBonds = allObjects(state.doc).filter(
+          (obj): obj is BondObject => obj.type === 'bond' && obj.parentId === parent.id
+        );
+        const internal =
+          ringGeometry(groupBonds)?.ringBonds.some((item) => item.id === bond.id) ?? false;
+        if (internal) {
+          state.notify('环内键的键级由环样式统一控制', 'info');
+          return;
+        }
       }
       // 双击键循环键型：单 → 双 → 三 → 芳香 → 单；跳过价层不允许的档位。
       const order = ['single', 'double', 'triple', 'aromatic'] as const;
