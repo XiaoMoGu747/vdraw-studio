@@ -292,12 +292,6 @@ export interface BondObject extends SceneObjectBase {
   bondType: BondType;
   start: Vec;
   end: Vec;
-  /** 起端绑定的原子 id；缺省时由化学图按距离就近推导（旧文件兼容） */
-  atomA?: ID | null;
-  /** 末端绑定的原子 id */
-  atomB?: ID | null;
-  /** 显式环内键标记：由环工具写入，避免用几何反复推测 */
-  ringBondId?: ID;
   /** 缩放倍率：双键/三键的平行线间距随之同步缩放；旧文件缺省为 1。 */
   scale?: number;
   /** 创建时的平行线基础间距；缺省为 4.2，旧文件按历史默认渲染。 */
@@ -316,8 +310,6 @@ export interface AtomLabelData {
   lonePairs: number;
   hydrogens: number | null;
   group: string | null;
-  /** 官能团（SUP）条目 id；与 group 的折叠显示文本共存 */
-  supId?: string | null;
   /** 原子标签字号；缺省为 16，缩放选择框时同步更新。 */
   fontSize?: number;
 }
@@ -326,11 +318,6 @@ export interface AtomObject extends SceneObjectBase {
   type: 'atom';
   position: Vec;
   label: AtomLabelData;
-  /**
-   * 用户显式固定的氢数；null/缺省表示由价态推导。
-   * 置位后自动重算不再覆盖，避免手填值被冲掉。
-   */
-  explicitH?: number | null;
 }
 
 export interface RingObject extends SceneObjectBase {

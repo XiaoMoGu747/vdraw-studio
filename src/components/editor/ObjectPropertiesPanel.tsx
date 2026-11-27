@@ -460,14 +460,9 @@ export function ObjectPropertiesPanel({
     );
   };
 
-  const updateAtom = (
-    patch: Partial<AtomLabelData>,
-    atomPatch?: { explicitH?: number | null }
-  ) => {
+  const updateAtom = (patch: Partial<AtomLabelData>) => {
     mutateSelection((obj) =>
-      obj.type === 'atom'
-        ? { ...obj, ...atomPatch, label: { ...obj.label, ...patch } }
-        : obj
+      obj.type === 'atom' ? { ...obj, label: { ...obj.label, ...patch } } : obj
     );
   };
 
@@ -1025,13 +1020,7 @@ export function ObjectPropertiesPanel({
                 value={primary.label.hydrogens ?? 0}
                 min={0}
                 max={4}
-                onChange={(value) =>
-                  // 手填氢数视为"显式固定"，后续结构变更不再自动覆盖；清 0 则恢复自动推导。
-                  updateAtom(
-                    { hydrogens: value > 0 ? value : null },
-                    { explicitH: value > 0 ? value : null }
-                  )
-                }
+                onChange={(value) => updateAtom({ hydrogens: value > 0 ? value : null })}
               />
             </div>
             <div className="field-row">

@@ -1,5 +1,4 @@
 import type { AtomLabelData, AtomObject, Vec } from '../../types/document';
-import { supDisplayOf } from './sup-library';
 
 export const ATOM_FONT_SIZE = 16;
 
@@ -55,11 +54,6 @@ export interface AtomLabelParts {
 
 export function atomMainText(label: AtomLabelData, implicitHydrogens = false): string {
   if (label.group) return label.group;
-  // 只有 supId 没有 group 文本时（例如从旧文件迁移），用 SUP 库的折叠显示名兜底。
-  if (label.supId) {
-    const supText = supDisplayOf(label.supId);
-    if (supText) return supText;
-  }
   const hydrogens = label.hydrogens ?? 0;
   // 隐式氢：只影响显示/导出，不修改原子对象里的氢数。
   if (hydrogens > 0 && !implicitHydrogens) return `${label.element}H${subscript(hydrogens)}`;
